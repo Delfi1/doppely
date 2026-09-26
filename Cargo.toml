@@ -1,0 +1,38 @@
+[package]
+name = "doppely"
+version = "0.0.1"
+edition = "2024"
+
+[features]
+default = ["lightyear/client", "lightyear/raw_connection", "lightyear/server", "udp"]
+netcode = ["lightyear/netcode"]
+webtransport = ["lightyear/webtransport"]
+client = [
+    "bevy/3d",
+    "bevy/3d_bevy_render",
+    "bevy/3d_api",
+    "bevy/bevy_ui",
+    "bevy/bevy_ui_render",
+    "bevy/bevy_render",
+    "bevy/bevy_core_pipeline",
+    "bevy/bevy_winit",
+    "bevy/bevy_window",
+]
+gui = []
+server = ["dep:dfdx"]
+udp = ["lightyear/udp"]
+
+[dependencies]
+dfdx = { version = "0.13.0", features = ["cuda"], optional = true }
+lightyear = { version="0.30", features = ["replication"] }
+serde = "1.0.229"
+
+[dependencies.bevy]
+version = "0.19.1"
+default-features = false
+features = [
+    "std",
+    "bevy_state",
+    "bevy_asset",
+    "bevy_log"
+]
