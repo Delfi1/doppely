@@ -24,7 +24,7 @@ udp = ["lightyear/udp"]
 
 [dependencies]
 dfdx = { version = "0.13.0", features = ["cuda"], optional = true }
-lightyear = { version="0.30", features = ["replication"] }
+lightyear = { version="0.30", features = ["replication", "input_native"] }
 serde = "1.0.229"
 
 [dependencies.bevy]

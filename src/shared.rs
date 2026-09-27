@@ -1,9 +1,8 @@
+use bevy::ecs::entity::MapEntities;
 use bevy::prelude::*;
-use bevy::prelude::*;
-#[cfg(all(feature = "webtransport", not(target_family = "wasm")))]
-use bevy::tasks::IoTaskPool;
 use core::net::{IpAddr, Ipv4Addr, SocketAddr};
 use core::time::Duration;
+use lightyear::input::native::prelude::*;
 use lightyear::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -19,9 +18,22 @@ pub struct Channel1;
 pub struct Message1(pub usize);
 
 #[derive(
-    Component, Serialize, Deserialize, Clone, Debug, PartialEq, Reflect, Deref, DerefMut, Default,
+    Component, Clone, Debug, PartialEq, Reflect, Deref, DerefMut, Default, Serialize, Deserialize,
 )]
 pub struct PlayerPosition(pub Vec3);
+
+#[derive(Serialize, Deserialize, Default, Debug, PartialEq, Eq, Clone, Copy, Hash, Reflect)]
+pub struct MyInput {
+    pub forward: bool,
+    pub left: bool,
+    pub right: bool,
+    pub space: bool,
+    pub catch: bool,
+}
+
+impl MapEntities for MyInput {
+    fn map_entities<M: EntityMapper>(&mut self, _entity_mapper: &mut M) {}
+}
 
 impl Plugin for SharedPlugin {
     fn build(&self, app: &mut App) {
@@ -35,5 +47,7 @@ impl Plugin for SharedPlugin {
         .add_direction(NetworkDirection::Bidirectional);
 
         app.component::<PlayerPosition>().replicate();
+
+        app.add_plugins(InputPlugin::<MyInput>::default());
     }
 }

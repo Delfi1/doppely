@@ -28,21 +28,21 @@ use bevy::prelude::*;
 fn main() {
     let mut app = App::new();
 
+    let delta = Duration::from_secs_f64(1.0 / TIMESTEP_HZ);
     #[cfg(feature = "client")]
     {
         app.add_plugins(DefaultPlugins);
         app.add_plugins(ClientPlugins {
-            tick_duration: Duration::from_secs_f64(1.0 / TIMESTEP_HZ),
+            tick_duration: delta,
         });
     }
 
     #[cfg(feature = "server")]
     {
-        let delta = Duration::from_secs_f64(1.0 / TIMESTEP_HZ);
         app.add_plugins((
             DefaultPlugins.set(bevy::app::ScheduleRunnerPlugin::run_loop(delta)),
             ServerPlugins {
-                tick_duration: Duration::from_secs_f64(1.0 / TIMESTEP_HZ),
+                tick_duration: delta,
             },
         ));
     }
