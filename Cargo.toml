@@ -4,29 +4,39 @@ version = "0.0.1"
 edition = "2024"
 
 [features]
-default = ["lightyear/client", "lightyear/raw_connection", "lightyear/server", "udp"]
+default = ["lightyear/raw_connection", "udp"]
 netcode = ["lightyear/netcode"]
-webtransport = ["lightyear/webtransport"]
 client = [
     "bevy/3d",
     "bevy/3d_bevy_render",
     "bevy/3d_api",
     "bevy/bevy_ui",
+    "bevy/bevy_text",
     "bevy/bevy_ui_render",
     "bevy/bevy_render",
     "bevy/bevy_core_pipeline",
     "bevy/bevy_winit",
     "bevy/bevy_window",
+    "bevy/default_font",
+    "lightyear/client"
 ]
-gui = []
-server = ["dep:dfdx"]
+server = ["dep:dfdx", "lightyear/server"]
 udp = ["lightyear/udp"]
 
 [dependencies]
-dfdx = { version = "0.13.0", features = ["cuda"], optional = true }
-lightyear = { version="0.30", features = ["replication", "input_native"] }
 serde = "1.0.229"
+clap = { version = "4.6.7", features = ["derive"] }
 
+# Управление вводом для клиент-серверного взаимодействия
+leafwing-input-manager = "0.21.0"
+
+# Сетевая библиотека
+lightyear = { version="0.30", features = ["avian3d", "interpolation", "prediction", "replication", "leafwing"] }
+
+# Библиотека для нейронной сети
+dfdx = { version = "0.13.0", features = ["cuda"], optional = true }
+
+# Движок для обработки логики игры и рендеринга
 [dependencies.bevy]
 version = "0.19.1"
 default-features = false
@@ -36,6 +46,11 @@ features = [
     "bevy_asset",
     "bevy_log"
 ]
+
+# Движок физики в 3d
+[dependencies.avian3d]
+version = "0.7"
+features = ["serialize"]
 
 [[bin]]
 name = "client"

@@ -1,47 +1,64 @@
 use doppely::*;
 
 use bevy::prelude::*;
-use lightyear::connection::server::Start;
-use lightyear::prelude::server::ServerPlugins;
-use lightyear::prelude::server::ServerUdpIo;
+use leafwing_input_manager::action_state::*;
 use lightyear::prelude::server::*;
 use lightyear::prelude::*;
+use std::net::Ipv4Addr;
 use std::{io::BufRead, time::Duration};
 
 // use dfdx::prelude::*;
 // type Device = Cpu;
 // type Model = (Linear<1, 5>, ReLU, Linear<5, 10>);
 
+const SERVER_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), SERVER_PORT);
+
 pub struct ServerPlugin;
 
 impl Plugin for ServerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, startup);
-        app.add_systems(Update, tick_player);
-        app.add_observer(handle_new_client);
+        app.add_observer(on_connected);
+        app.add_observer(handle_connected);
     }
 }
 
-fn handle_new_client(trigger: On<Add, Connected>, mut commands: Commands) {
-    commands.entity(trigger.entity).insert(ReplicationSender);
+// Event: On new client connected
+pub(crate) fn on_connected(trigger: On<Add, LinkOf>, mut commands: Commands) {
+    let name = "Client ".to_string() + &trigger.entity.index_u32().to_string();
 
-    commands.spawn((
-        PlayerPosition::default(),
-        Replicate::to_clients(NetworkTarget::All),
-    ));
-
-    info!("New client connected: {}", trigger.entity);
+    commands
+        .entity(trigger.entity)
+        .insert((ReplicationSender, Name::from(name)));
 }
 
-fn tick_player(mut players: Query<&mut PlayerPosition>, time: Res<Time>) {
-    let delta = time.delta_secs();
-    for mut player in players.iter_mut() {
-        player.z += 2.0 * delta;
+pub(crate) fn handle_connected(
+    trigger: On<Add, Connected>,
+    query: Query<&RemoteId, With<ClientOf>>,
+    mut commands: Commands,
+) {
+    let Ok(client_id) = query.get(trigger.entity) else {
+        return;
+    };
+    let client_id = client_id.0;
+    let entity = commands
+        .spawn((
+            PlayerId(client_id),
+            ActionState::<PlayerAction>::default(),
+            Replicate::to_clients(NetworkTarget::All),
+            PredictionTarget::to_clients(NetworkTarget::Single(client_id)),
+            InterpolationTarget::to_clients(NetworkTarget::AllExceptSingle(client_id)),
+            ControlledBy {
+                owner: trigger.entity,
+                lifetime: Default::default(),
+            },
+        ))
+        .id();
 
-        if player.z > 5.0 {
-            player.z = -5.0;
-        }
-    }
+    info!(
+        "Create player entity {:?} for client {:?}",
+        entity, client_id
+    );
 }
 
 fn startup(mut commands: Commands) -> Result {
@@ -80,7 +97,7 @@ fn main() {
 #[derive(Resource, Default)]
 pub struct ReadLine(pub Option<std::thread::JoinHandle<String>>);
 
-fn process_input(read: ResMut<ReadLine>) {
+fn process_input(read: ResMut<ReadLine>, mut state: ResMut<NextState<GameState>>) {
     let inner = read.into_inner();
     if inner.0.is_none() {
         inner.0 = Some(std::thread::spawn(move || {
@@ -98,15 +115,34 @@ fn process_input(read: ResMut<ReadLine>) {
             return;
         }
 
-        let command = task.join().unwrap_or_default();
+        let line = task.join().unwrap_or_default();
 
-        match command.as_str() {
+        let mut data = line.split(' ');
+        let command = data.next().unwrap_or_default();
+        let args = data.collect::<Vec<_>>();
+
+        match command {
             "exit" | "quit" | "stop" => {
                 bevy::log::info!("Stopping server...");
                 std::process::exit(0);
             }
             "players" => {
                 bevy::log::info!("Players: ...");
+            }
+            "mode" => {
+                let mode = args.first().cloned().unwrap_or_default();
+
+                match mode.trim() {
+                    "editor" => {
+                        state.set(GameState::Editor);
+                        bevy::log::info!("Switched to mode: editor");
+                    }
+                    "lobby" => {
+                        state.set(GameState::Lobby);
+                        bevy::log::info!("Switched to mode: lobby");
+                    }
+                    _ => {}
+                }
             }
             _ => {}
         }
