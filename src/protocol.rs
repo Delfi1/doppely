@@ -1,4 +1,4 @@
-//use avian3d::prelude::*;
+//pub use avian3d::prelude::*;
 use bevy::prelude::*;
 use leafwing_input_manager::prelude::*;
 use lightyear::input::leafwing::prelude::*;
@@ -6,17 +6,31 @@ use lightyear::input::prelude::*;
 use lightyear::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{PLAYER_SPEED, SHIFT_MULTIPLIER};
-
 #[derive(Component, Clone, Debug, PartialEq, Reflect, Deref, DerefMut, Serialize, Deserialize)]
 pub struct PlayerId(pub PeerId);
+
+// Objects:
+
+#[derive(Component, Clone, Debug, Reflect, Serialize, Deserialize)]
+pub struct FloorMarker;
+
+#[derive(Component, Clone, Debug, Reflect, Serialize, Deserialize)]
+pub struct CubeMarker;
+
+#[derive(Component, Clone, Debug, Reflect, Serialize, Deserialize)]
+/// Object glowing Marker
+pub struct Glowing;
+
+#[derive(Component, Clone, Debug, Reflect, Serialize, Deserialize)]
+/// Point light Marker
+pub struct Light;
 
 // Input
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Copy, Hash, Reflect)]
 pub enum PlayerAction {
-    Up,
-    Down,
+    Forward,
+    Backward,
     Left,
     Right,
     Catch,
@@ -33,38 +47,6 @@ impl Actionlike for PlayerAction {
     }
 }
 
-pub fn apply_movement(
-    mut query: Query<(&ActionState<PlayerAction>, Mut<Transform>), With<PlayerId>>,
-) {
-    for (action_state, mut transform) in query.iter_mut() {
-        // rotate:
-
-        // move:
-        let mut movement = Vec3::ZERO;
-        if action_state.pressed(&PlayerAction::Up) {
-            movement += *transform.forward();
-        }
-        if action_state.pressed(&PlayerAction::Down) {
-            movement -= *transform.forward();
-        }
-        if action_state.pressed(&PlayerAction::Left) {
-            movement -= *transform.right();
-        }
-        if action_state.pressed(&PlayerAction::Right) {
-            movement += *transform.right();
-        }
-
-        if movement != Vec3::ZERO {
-            movement = movement.normalize() * PLAYER_SPEED;
-            if action_state.pressed(&PlayerAction::Shift) {
-                movement *= SHIFT_MULTIPLIER;
-            }
-
-            transform.translation += movement;
-        }
-    }
-}
-
 /// Channels
 pub struct Channel1;
 
@@ -72,6 +54,7 @@ pub struct Channel1;
     States, Resource, Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Default, Reflect,
 )]
 pub enum GameState {
+    Loading,
     #[default]
     Lobby,
     InGame,
@@ -85,7 +68,7 @@ impl Plugin for ProtocolPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(InputPlugin::<PlayerAction> {
             config: InputConfig {
-                lag_compensation: true,
+                rebroadcast_inputs: true,
                 ..default()
             },
         });
@@ -93,6 +76,12 @@ impl Plugin for ProtocolPlugin {
         // components
         app.component::<PlayerId>().replicate();
         app.component::<Transform>().replicate().predict();
+
+        app.component::<Light>().replicate();
+        app.component::<Glowing>().replicate();
+
+        app.component::<CubeMarker>().replicate();
+        app.component::<FloorMarker>().replicate();
 
         // resources
         app.resource::<GameState>().replicate();

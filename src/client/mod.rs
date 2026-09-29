@@ -1,8 +1,13 @@
+use bevy::input::mouse::*;
+use bevy::post_process::bloom::*;
+use bevy::window::*;
 use doppely::*;
 
 use bevy::prelude::*;
 use clap::*;
+use leafwing_input_manager::plugin::InputManagerSystem;
 use leafwing_input_manager::prelude::*;
+use lightyear::input::client::InputSystems;
 use lightyear::prelude::client::*;
 use lightyear::prelude::*;
 use std::time::Duration;
@@ -22,9 +27,20 @@ pub struct ServerAddr(pub SocketAddr);
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, startup);
-        app.add_systems(FixedUpdate, apply_movement);
+        app.add_systems(
+            FixedPreUpdate,
+            update_cursor
+                .chain()
+                .before(InputSystems::BufferClientInputs)
+                .in_set(InputManagerSystem::ManualControl),
+        );
 
-        app.add_systems(FixedPostUpdate, display_debug);
+        app.add_systems(
+            FixedPostUpdate,
+            (render_other_players, render_cubes, display_debug).chain(),
+        );
+        app.add_systems(Update, hide_cursor);
+
         app.add_observer(on_connected);
 
         app.add_systems(PreUpdate, handle_state);
@@ -33,18 +49,25 @@ impl Plugin for ClientPlugin {
 }
 
 fn on_connected(trigger: On<Add, Controlled>, mut commands: Commands) {
-    bevy::log::info!("Insered controller");
-    commands.entity(trigger.entity).insert(Camera3d::default());
-}
-
-fn startup(mut commands: Commands, server_addr: Res<ServerAddr>) {
     let input_map = InputMap::new([
-        (PlayerAction::Up, KeyCode::KeyW),
-        (PlayerAction::Down, KeyCode::KeyS),
+        (PlayerAction::Forward, KeyCode::KeyW),
+        (PlayerAction::Backward, KeyCode::KeyS),
         (PlayerAction::Left, KeyCode::KeyA),
         (PlayerAction::Right, KeyCode::KeyD),
         (PlayerAction::Shift, KeyCode::ShiftLeft),
     ]);
+
+    commands
+        .entity(trigger.entity)
+        .insert((input_map, Camera3d::default(), Bloom::default()));
+}
+
+fn startup(
+    mut commands: Commands,
+    mut state: ResMut<NextState<GameState>>,
+    server_addr: Res<ServerAddr>,
+) {
+    state.set(GameState::Loading);
 
     let mut client = commands.spawn((
         Client,
@@ -54,10 +77,45 @@ fn startup(mut commands: Commands, server_addr: Res<ServerAddr>) {
         ReplicationReceiver,
         RawClient,
         UdpIo::default(),
-        input_map,
     ));
 
     client.trigger(Connect::from);
+}
+
+fn hide_cursor(keyboard: Res<ButtonInput<KeyCode>>, mut cursor: Single<Mut<CursorOptions>>) {
+    if keyboard.just_pressed(KeyCode::Escape) {
+        let mode = match cursor.grab_mode {
+            CursorGrabMode::None => {
+                cursor.visible = false;
+                CursorGrabMode::Confined
+            }
+            _ => {
+                cursor.visible = true;
+                CursorGrabMode::None
+            }
+        };
+        cursor.grab_mode = mode;
+    }
+}
+
+fn update_cursor(
+    mut moved: MessageReader<MouseMotion>,
+    time: Res<Time>,
+    mut action_state: Single<&mut ActionState<PlayerAction>, With<InputMap<PlayerAction>>>,
+    cursor: Single<Ref<CursorOptions>>,
+) {
+    let time_delta = time.delta_secs();
+
+    let mut delta = Vec2::ZERO;
+    for motion in moved.read() {
+        delta += motion.delta;
+    }
+
+    if delta == Vec2::ZERO || cursor.visible {
+        return;
+    }
+
+    action_state.set_axis_pair(&PlayerAction::MoveCursor, delta * time_delta);
 }
 
 #[derive(Parser, Debug)]

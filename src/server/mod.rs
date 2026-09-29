@@ -4,7 +4,6 @@ use bevy::prelude::*;
 use leafwing_input_manager::action_state::*;
 use lightyear::prelude::server::*;
 use lightyear::prelude::*;
-use std::net::Ipv4Addr;
 use std::{io::BufRead, time::Duration};
 
 // use dfdx::prelude::*;
@@ -18,6 +17,7 @@ pub struct ServerPlugin;
 impl Plugin for ServerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, startup);
+
         app.add_observer(on_connected);
         app.add_observer(handle_connected);
     }
@@ -45,12 +45,13 @@ pub(crate) fn handle_connected(
         .spawn((
             PlayerId(client_id),
             ActionState::<PlayerAction>::default(),
+            Transform::from_xyz(0.0, 0.0, 4.0),
             Replicate::to_clients(NetworkTarget::All),
             PredictionTarget::to_clients(NetworkTarget::Single(client_id)),
             InterpolationTarget::to_clients(NetworkTarget::AllExceptSingle(client_id)),
             ControlledBy {
                 owner: trigger.entity,
-                lifetime: Default::default(),
+                lifetime: Lifetime::Persistent,
             },
         ))
         .id();
@@ -67,6 +68,23 @@ fn startup(mut commands: Commands) -> Result {
         .id();
 
     commands.trigger(Start { entity: server });
+
+    // Spawn test object - cube
+    commands.spawn((
+        Name::new("Cube"),
+        Transform::default(),
+        CubeMarker,
+        Glowing,
+        Light,
+        Replicate::to_clients(NetworkTarget::All),
+    ));
+
+    commands.spawn((
+        Name::new("Floor"),
+        Transform::from_xyz(0.0, -1.2, 0.0),
+        FloorMarker,
+        Replicate::to_clients(NetworkTarget::All),
+    ));
     Ok(())
 }
 
@@ -75,7 +93,9 @@ fn main() {
 
     let delta = Duration::from_secs_f64(1.0 / TIMESTEP_HZ);
     app.add_plugins((
+        TransformPlugin,
         bevy::state::app::StatesPlugin,
+        bevy::app::TerminalCtrlCHandlerPlugin,
         bevy::log::LogPlugin::default(),
         MinimalPlugins.set(bevy::app::ScheduleRunnerPlugin::run_loop(delta)),
         ServerPlugins {
@@ -144,7 +164,9 @@ fn process_input(read: ResMut<ReadLine>, mut state: ResMut<NextState<GameState>>
                     _ => {}
                 }
             }
-            _ => {}
+            v => {
+                bevy::log::warn!("Unknown command: {}", v);
+            }
         }
     }
 }
