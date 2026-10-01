@@ -134,7 +134,7 @@ fn main() {
     let mut app = App::new();
 
     let delta = Duration::from_secs_f64(1.0 / TIMESTEP_HZ);
-    app.add_plugins(DefaultPlugins);
+    app.add_plugins((FrameTimeDiagnosticsPlugin::new(64), DefaultPlugins));
     app.add_plugins(ClientPlugins {
         tick_duration: delta,
     });

@@ -45,6 +45,7 @@ pub(crate) fn handle_connected(
         .spawn((
             PlayerId(client_id),
             ActionState::<PlayerAction>::default(),
+            Position(Vec3::new(0.0, 0.0, 4.0)),
             Transform::from_xyz(0.0, 0.0, 4.0),
             Replicate::to_clients(NetworkTarget::All),
             PredictionTarget::to_clients(NetworkTarget::Single(client_id)),
@@ -53,6 +54,8 @@ pub(crate) fn handle_connected(
                 owner: trigger.entity,
                 lifetime: Lifetime::Persistent,
             },
+            DisableReplicateHierarchy,
+            character_physics(),
         ))
         .id();
 
@@ -72,18 +75,26 @@ fn startup(mut commands: Commands) -> Result {
     // Spawn test object - cube
     commands.spawn((
         Name::new("Cube"),
-        Transform::default(),
+        Transform::from_scale(Vec3::splat(0.5)),
         CubeMarker,
-        Glowing,
-        Light,
+        Glowing {
+            color: Srgba::new(100.0, 20.0, 200.0, 1.0),
+        },
+        Light {
+            radius: 10.0,
+            color: Srgba::new(100.0, 20.0, 200.0, 1.0),
+            intensity: 100_000.0,
+        },
         Replicate::to_clients(NetworkTarget::All),
+        dynamic_physics(),
     ));
 
     commands.spawn((
         Name::new("Floor"),
-        Transform::from_xyz(0.0, -1.2, 0.0),
+        Transform::from_xyz(0.0, -2.2, 0.0).with_scale([10.0, 0.2, 10.0].into()),
         FloorMarker,
         Replicate::to_clients(NetworkTarget::All),
+        static_physics(),
     ));
     Ok(())
 }
@@ -94,6 +105,7 @@ fn main() {
     let delta = Duration::from_secs_f64(1.0 / TIMESTEP_HZ);
     app.add_plugins((
         TransformPlugin,
+        AssetPlugin::default(),
         bevy::state::app::StatesPlugin,
         bevy::app::TerminalCtrlCHandlerPlugin,
         bevy::log::LogPlugin::default(),
@@ -102,6 +114,9 @@ fn main() {
             tick_duration: delta,
         },
     ));
+
+    app.init_resource::<Assets<Mesh>>()
+        .add_message::<AssetEvent<Mesh>>();
 
     app.add_plugins((SharedPlugin, ServerPlugin));
 

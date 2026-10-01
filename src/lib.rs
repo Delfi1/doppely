@@ -5,13 +5,14 @@
 
 mod protocol;
 use leafwing_input_manager::prelude::*;
-use lightyear::{prediction::Predicted, prelude::SyncedLocalTimeline};
+use lightyear::{avian3d::plugin::*, prediction::Predicted, prelude::SyncedLocalTimeline};
 pub use protocol::*;
 
 use bevy::prelude::*;
 pub use core::net::*;
 
 pub const EPS: f32 = 0.0001;
+pub const MAX_VELOCITY: f32 = 20.0;
 pub const SENSITIVITY: f32 = 0.08;
 pub const PITCH_LIMIT: f32 = std::f32::consts::FRAC_PI_2 - 0.01;
 
@@ -20,24 +21,25 @@ pub const SERVER_PORT: u16 = 5000;
 pub const PLAYER_SPEED: f32 = 5.0;
 pub const SHIFT_MULTIPLIER: f32 = 1.7;
 
+pub const CHARACTER_WIDTH: f32 = 0.5;
+pub const CHARACTER_HEIGHT: f32 = 1.2;
+
 pub fn shared_movement(
     action: &ActionState<PlayerAction>,
     time: &Time,
     mut transform: Mut<Transform>,
 ) {
     // rotate player:
-    let Some(cursor_data) = action.dual_axis_data(&PlayerAction::MoveCursor) else {
-        return;
+    if let Some(cursor_data) = action.dual_axis_data(&PlayerAction::MoveCursor) {
+        let delta = cursor_data.pair;
+        let (mut yaw, mut pitch, roll) = transform.rotation.to_euler(EulerRot::YXZ);
+
+        yaw -= delta.x * SENSITIVITY;
+        pitch -= delta.y * SENSITIVITY;
+        pitch = pitch.clamp(-PITCH_LIMIT, PITCH_LIMIT);
+
+        transform.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
     };
-
-    let delta = cursor_data.pair;
-    let (mut yaw, mut pitch, roll) = transform.rotation.to_euler(EulerRot::YXZ);
-
-    yaw -= delta.x * SENSITIVITY;
-    pitch -= delta.y * SENSITIVITY;
-    pitch = pitch.clamp(-PITCH_LIMIT, PITCH_LIMIT);
-
-    transform.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
 
     // move:
     let mut movement = Vec3::ZERO;
@@ -86,19 +88,46 @@ fn player_movement(
     }
 }
 
+pub fn character_physics() -> impl Bundle {
+    (
+        Collider::capsule(CHARACTER_WIDTH, CHARACTER_HEIGHT),
+        RigidBody::Dynamic,
+        LockedAxes::default()
+            .lock_rotation_x()
+            .lock_rotation_y()
+            .lock_rotation_z(),
+        Friction::new(0.0).with_combine_rule(CoefficientCombine::Min),
+    )
+}
+
+pub fn dynamic_physics() -> impl Bundle {
+    (Collider::cuboid(1.0, 1.0, 1.0), RigidBody::Dynamic)
+}
+
+pub fn static_physics() -> impl Bundle {
+    (Collider::cuboid(1.0, 1.0, 1.0), RigidBody::Static)
+}
+
 #[derive(Clone)]
 pub struct SharedPlugin;
 
 impl Plugin for SharedPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(ProtocolPlugin);
-        // app.add_plugins(
-        //     PhysicsPlugins::default()
-        //         .build()
-        //         .disable::<PhysicsTransformPlugin>(),
-        // )
-        // .insert_resource(Gravity(-Vec3::Y));
-        app.add_plugins(lightyear::avian3d::plugin::LightyearAvianPlugin::default());
+
+        app.add_plugins(lightyear::avian3d::plugin::LightyearAvianPlugin {
+            replication_mode: AvianReplicationMode::Transform,
+            ..default()
+        });
+
+        app.add_plugins(
+            PhysicsPlugins::default()
+                .build()
+                .disable::<PhysicsTransformPlugin>()
+                .disable::<PhysicsInterpolationPlugin>()
+                .disable::<IslandPlugin>()
+                .disable::<IslandSleepingPlugin>(),
+        );
 
         app.add_systems(FixedUpdate, player_movement);
     }

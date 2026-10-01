@@ -1,4 +1,4 @@
-//pub use avian3d::prelude::*;
+pub use avian3d::prelude::*;
 use bevy::prelude::*;
 use leafwing_input_manager::prelude::*;
 use lightyear::input::leafwing::prelude::*;
@@ -19,11 +19,17 @@ pub struct CubeMarker;
 
 #[derive(Component, Clone, Debug, Reflect, Serialize, Deserialize)]
 /// Object glowing Marker
-pub struct Glowing;
+pub struct Glowing {
+    pub color: Srgba,
+}
 
 #[derive(Component, Clone, Debug, Reflect, Serialize, Deserialize)]
 /// Point light Marker
-pub struct Light;
+pub struct Light {
+    pub radius: f32,
+    pub color: Srgba,
+    pub intensity: f32,
+}
 
 // Input
 
@@ -75,7 +81,15 @@ impl Plugin for ProtocolPlugin {
 
         // components
         app.component::<PlayerId>().replicate();
-        app.component::<Transform>().replicate().predict();
+        app.component::<Name>().replicate();
+
+        app.component::<RigidBody>().replicate();
+        app.component::<Collider>().replicate();
+        app.component::<LockedAxes>().replicate();
+        app.component::<Friction>().replicate();
+        app.component::<Transform>()
+            .replicate_with_priority(0)
+            .predict();
 
         app.component::<Light>().replicate();
         app.component::<Glowing>().replicate();

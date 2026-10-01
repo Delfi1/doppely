@@ -1,5 +1,6 @@
 use bevy::camera::visibility::*;
 use bevy::color::palettes::css::*;
+pub use bevy::diagnostic::*;
 use bevy::prelude::*;
 use doppely::*;
 use lightyear::prelude::Controlled;
@@ -9,6 +10,7 @@ pub struct DebugText;
 
 pub fn display_debug(
     mut commands: Commands,
+    diagnostics: Res<DiagnosticsStore>,
     player: Option<Single<(Entity, Ref<Transform>), With<Controlled>>>,
     text: Option<Single<Mut<Text>, With<DebugText>>>,
 ) {
@@ -23,8 +25,15 @@ pub fn display_debug(
 
     let (entity, transform) = player.into_inner();
 
+    let fps = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FPS)
+        .and_then(|fps| fps.smoothed())
+        .unwrap_or(0.0)
+        .round() as u64;
+
     let data = format!(
-        "Player entity: {:?}\n Coords: {:?}",
+        "Fps: {}\nPlayer entity: {:?}\nCoords: {:?}",
+        fps,
         entity,
         transform.translation.to_array()
     );
@@ -46,7 +55,7 @@ pub fn render_other_players(
         base_color: GRAY.into(),
         ..default()
     });
-    let model = meshes.add(Cuboid::from_size([1.0, 2.0, 1.0].into()));
+    let model = meshes.add(Capsule3d::new(CHARACTER_WIDTH, CHARACTER_HEIGHT));
 
     for entity in players.iter() {
         commands
@@ -63,16 +72,15 @@ pub fn render_cubes(
     floors: Query<(Entity, Option<Ref<Glowing>>, Option<Ref<Light>>), Added<FloorMarker>>,
 ) {
     if !cubes.is_empty() {
-        let cube = meshes.add(Cuboid::from_length(0.5));
+        let cube = meshes.add(Cuboid::from_length(1.0));
         let mut material = StandardMaterial {
             base_color: GRAY.into(),
             ..default()
         };
 
         for (entity, glowing, light) in cubes.iter() {
-            if glowing.is_some() {
-                // todo: glowing color
-                material.emissive = LinearRgba::rgb(100.0, 20.0, 200.0);
+            if let Some(glowing) = glowing {
+                material.emissive = LinearRgba::from(glowing.color);
             }
 
             let material = materials.add(material.clone());
@@ -80,10 +88,11 @@ pub fn render_cubes(
                 .entity(entity)
                 .insert((Mesh3d(cube.clone()), MeshMaterial3d(material.clone())));
 
-            if light.is_some() {
+            if let Some(light) = light {
                 commands.entity(entity).insert((
                     PointLight {
-                        radius: 10.0,
+                        radius: light.radius,
+                        intensity: light.intensity,
                         ..default()
                     },
                     NoFrustumCulling,
@@ -97,7 +106,7 @@ pub fn render_cubes(
             base_color: GRAY.into(),
             ..default()
         };
-        let floor = meshes.add(Cuboid::new(10.0, 0.2, 10.0));
+        let floor = meshes.add(Cuboid::new(1.0, 1.0, 1.0));
 
         for (entity, glowing, light) in floors.iter() {
             if glowing.is_some() {
