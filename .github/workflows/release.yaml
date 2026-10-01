@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '*'
+
+env:
+  use_git_lfs: false
+  bin_file: out.zip
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: olegtarasov/get-tag@v2.1.2
+        id: get_version
+      - uses: actions/checkout@v4
+        with:
+          lfs: ${{ env.use_git_lfs }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Build
+        run: |
+          cargo build --bin client --features client --release --target x86_64-pc-windows-msvc
+          cargo build --bin server --features server --release --target x86_64-pc-windows-msvc
+
+      - name: Prepare package
+        run: |
+          mkdir out
+          cp target/x86_64-pc-windows-msvc/release/client.exe out/
+          cp target/x86_64-pc-windows-msvc/release/server.exe out/
+          mkdir assets -ea 0
+          cp -r assets out/
+
+      - name: Package as a zip
+        run: |
+          Compress-Archive -Path out/* -DestinationPath ${{ env.bin_file }}
+
+      - name: Upload binaries to artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          path: ${{ env.bin_file }}
+          name: windows
+          retention-days: 1
+
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ${{ env.bin_file }}
+          asset_name: doppely-${{ steps.get_version.outputs.version }}.zip
+          tag: ${{ github.ref }}
+          overwrite: true

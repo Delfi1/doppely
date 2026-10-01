@@ -37,7 +37,7 @@ impl Plugin for ClientPlugin {
 
         app.add_systems(
             FixedPostUpdate,
-            (render_other_players, render_cubes, display_debug).chain(),
+            (render_other_players, render_object, display_debug).chain(),
         );
         app.add_systems(Update, hide_cursor);
 
@@ -55,6 +55,7 @@ fn on_connected(trigger: On<Add, Controlled>, mut commands: Commands) {
         (PlayerAction::Left, KeyCode::KeyA),
         (PlayerAction::Right, KeyCode::KeyD),
         (PlayerAction::Shift, KeyCode::ShiftLeft),
+        (PlayerAction::Catch, KeyCode::KeyF),
     ]);
 
     commands

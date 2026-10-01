@@ -6,6 +6,8 @@ edition = "2024"
 [features]
 default = ["lightyear/raw_connection", "udp"]
 netcode = ["lightyear/netcode"]
+udp = ["lightyear/udp"]
+
 client = [
     "bevy/3d",
     "bevy/3d_bevy_render",
@@ -20,8 +22,12 @@ client = [
     "bevy/default_font",
     "lightyear/client"
 ]
-server = ["dep:dfdx", "lightyear/server"]
-udp = ["lightyear/udp"]
+
+server = [
+    "dep:dfdx",
+    "lightyear/server",
+    "dep:strum"
+]
 
 [dependencies]
 serde = "1.0.229"
@@ -35,6 +41,7 @@ lightyear = { version="0.30", features = ["avian3d", "interpolation", "predictio
 
 # Библиотека для нейронной сети
 dfdx = { version = "0.13.0", features = ["cuda"], optional = true }
+strum = { version = "0.28.0", features = ["derive"], optional = true }
 
 # Движок для обработки логики игры и рендеринга
 [dependencies.bevy]
@@ -61,3 +68,7 @@ required-features = ["client"]
 name = "server"
 path = "src/server/mod.rs"
 required-features = ["server"]
+
+[profile.release]
+lto = "thin"
+strip = true

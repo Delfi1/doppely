@@ -5,12 +5,14 @@ use leafwing_input_manager::action_state::*;
 use lightyear::prelude::server::*;
 use lightyear::prelude::*;
 use std::{io::BufRead, time::Duration};
+use strum::EnumCount;
 
 // use dfdx::prelude::*;
 // type Device = Cpu;
 // type Model = (Linear<1, 5>, ReLU, Linear<5, 10>);
 
 const SERVER_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), SERVER_PORT);
+pub const ACTIONS: usize = PlayerAction::COUNT;
 
 pub struct ServerPlugin;
 
@@ -76,7 +78,7 @@ fn startup(mut commands: Commands) -> Result {
     commands.spawn((
         Name::new("Cube"),
         Transform::from_scale(Vec3::splat(0.5)),
-        CubeMarker,
+        ObjectMarker::Cube,
         Glowing {
             color: Srgba::new(100.0, 20.0, 200.0, 1.0),
         },
@@ -92,7 +94,7 @@ fn startup(mut commands: Commands) -> Result {
     commands.spawn((
         Name::new("Floor"),
         Transform::from_xyz(0.0, -2.2, 0.0).with_scale([10.0, 0.2, 10.0].into()),
-        FloorMarker,
+        ObjectMarker::Floor,
         Replicate::to_clients(NetworkTarget::All),
         static_physics(),
     ));

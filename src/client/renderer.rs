@@ -64,70 +64,50 @@ pub fn render_other_players(
     }
 }
 
-pub fn render_cubes(
+pub fn render_object(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    cubes: Query<(Entity, Option<Ref<Glowing>>, Option<Ref<Light>>), Added<CubeMarker>>,
-    floors: Query<(Entity, Option<Ref<Glowing>>, Option<Ref<Light>>), Added<FloorMarker>>,
+    objects: Query<
+        (
+            Entity,
+            Ref<ObjectMarker>,
+            Option<Ref<Glowing>>,
+            Option<Ref<Light>>,
+        ),
+        Added<ObjectMarker>,
+    >,
 ) {
-    if !cubes.is_empty() {
-        let cube = meshes.add(Cuboid::from_length(1.0));
-        let mut material = StandardMaterial {
-            base_color: GRAY.into(),
-            ..default()
+    for (entity, marker, glowing, light) in objects.iter() {
+        let mesh = match *marker {
+            ObjectMarker::Cube | ObjectMarker::Floor => meshes.add(Cuboid::from_length(1.0)),
         };
 
-        for (entity, glowing, light) in cubes.iter() {
-            if let Some(glowing) = glowing {
-                material.emissive = LinearRgba::from(glowing.color);
-            }
+        let mut material = match *marker {
+            ObjectMarker::Cube | ObjectMarker::Floor => StandardMaterial {
+                base_color: GRAY.into(),
+                ..default()
+            },
+        };
 
-            let material = materials.add(material.clone());
-            commands
-                .entity(entity)
-                .insert((Mesh3d(cube.clone()), MeshMaterial3d(material.clone())));
-
-            if let Some(light) = light {
-                commands.entity(entity).insert((
-                    PointLight {
-                        radius: light.radius,
-                        intensity: light.intensity,
-                        ..default()
-                    },
-                    NoFrustumCulling,
-                ));
-            }
+        if let Some(glowing) = glowing {
+            material.emissive = LinearRgba::from(glowing.color);
         }
-    }
 
-    if !floors.is_empty() {
-        let mut material = StandardMaterial {
-            base_color: GRAY.into(),
-            ..default()
-        };
-        let floor = meshes.add(Cuboid::new(1.0, 1.0, 1.0));
+        let material = materials.add(material.clone());
+        commands
+            .entity(entity)
+            .insert((Mesh3d(mesh.clone()), MeshMaterial3d(material.clone())));
 
-        for (entity, glowing, light) in floors.iter() {
-            if glowing.is_some() {
-                // todo: glowing color
-                material.emissive = LinearRgba::rgb(100.0, 20.0, 200.0);
-            }
-
-            let material = materials.add(material.clone());
-            commands
-                .entity(entity)
-                .insert((Mesh3d(floor.clone()), MeshMaterial3d(material.clone())));
-
-            if light.is_some() {
-                commands.entity(entity).insert((
-                    PointLight {
-                        radius: 10.0,
-                        ..default()
-                    },
-                    NoFrustumCulling,
-                ));
-            }
+        if let Some(light) = light {
+            commands.entity(entity).insert((
+                PointLight {
+                    radius: light.radius,
+                    intensity: light.intensity,
+                    ..default()
+                },
+                NoFrustumCulling,
+            ));
         }
     }
 }

@@ -10,12 +10,11 @@ use serde::{Deserialize, Serialize};
 pub struct PlayerId(pub PeerId);
 
 // Objects:
-
 #[derive(Component, Clone, Debug, Reflect, Serialize, Deserialize)]
-pub struct FloorMarker;
-
-#[derive(Component, Clone, Debug, Reflect, Serialize, Deserialize)]
-pub struct CubeMarker;
+pub enum ObjectMarker {
+    Cube,
+    Floor,
+}
 
 #[derive(Component, Clone, Debug, Reflect, Serialize, Deserialize)]
 /// Object glowing Marker
@@ -32,16 +31,17 @@ pub struct Light {
 }
 
 // Input
-
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Copy, Hash, Reflect)]
+#[repr(u8)]
+#[cfg_attr(feature = "server", derive(strum::EnumCount))]
 pub enum PlayerAction {
-    Forward,
-    Backward,
-    Left,
-    Right,
-    Catch,
-    Shift,
-    MoveCursor,
+    Forward = 0,
+    Backward = 1,
+    Left = 2,
+    Right = 3,
+    Catch = 4,
+    Shift = 5,
+    MoveCursor = 6,
 }
 
 impl Actionlike for PlayerAction {
@@ -53,8 +53,12 @@ impl Actionlike for PlayerAction {
     }
 }
 
-/// Channels
-pub struct Channel1;
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ItemType {
+    None = 0,
+    Key = 1,
+}
 
 #[derive(
     States, Resource, Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Default, Reflect,
@@ -85,28 +89,18 @@ impl Plugin for ProtocolPlugin {
 
         app.component::<RigidBody>().replicate();
         app.component::<Collider>().replicate();
-        app.component::<LockedAxes>().replicate();
+        //app.component::<LockedAxes>().replicate();
         app.component::<Friction>().replicate();
-        app.component::<Transform>()
-            .replicate_with_priority(0)
-            .predict();
+        app.component::<Transform>().replicate_with_priority(0);
 
         app.component::<Light>().replicate();
         app.component::<Glowing>().replicate();
 
-        app.component::<CubeMarker>().replicate();
-        app.component::<FloorMarker>().replicate();
+        app.component::<ObjectMarker>().replicate();
 
         // resources
         app.resource::<GameState>().replicate();
         app.init_state::<GameState>();
         app.init_resource::<GameState>();
-
-        // channels
-        app.add_channel::<Channel1>(ChannelSettings {
-            mode: ChannelMode::OrderedReliable(ReliableSettings::default()),
-            ..default()
-        })
-        .add_direction(NetworkDirection::ServerToClient);
     }
 }
