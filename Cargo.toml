@@ -1,6 +1,6 @@
 [package]
 name = "doppely"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2024"
 
 [features]
@@ -20,7 +20,8 @@ client = [
     "bevy/bevy_winit",
     "bevy/bevy_window",
     "bevy/default_font",
-    "lightyear/client"
+    "lightyear/client",
+    "leafwing-input-manager/mouse"
 ]
 
 server = [

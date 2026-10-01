@@ -35,19 +35,16 @@ pub struct Light {
 #[repr(u8)]
 #[cfg_attr(feature = "server", derive(strum::EnumCount))]
 pub enum PlayerAction {
-    Forward = 0,
-    Backward = 1,
-    Left = 2,
-    Right = 3,
-    Catch = 4,
-    Shift = 5,
-    MoveCursor = 6,
+    Move = 1,
+    Catch = 2,
+    Shift = 3,
+    MouseMove = 4,
 }
 
 impl Actionlike for PlayerAction {
     fn input_control_kind(&self) -> InputControlKind {
         match self {
-            Self::MoveCursor => InputControlKind::DualAxis,
+            Self::Move | Self::MouseMove => InputControlKind::DualAxis,
             _ => InputControlKind::Button,
         }
     }
@@ -55,6 +52,7 @@ impl Actionlike for PlayerAction {
 
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq)]
+// TODO: придумать больше предметов
 pub enum ItemType {
     None = 0,
     Key = 1,
@@ -89,7 +87,7 @@ impl Plugin for ProtocolPlugin {
 
         app.component::<RigidBody>().replicate();
         app.component::<Collider>().replicate();
-        //app.component::<LockedAxes>().replicate();
+        app.component::<LockedAxes>().replicate();
         app.component::<Friction>().replicate();
         app.component::<Transform>().replicate_with_priority(0);
 

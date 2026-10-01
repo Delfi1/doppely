@@ -1,13 +1,12 @@
-use bevy::input::mouse::*;
 use bevy::post_process::bloom::*;
 use bevy::window::*;
 use doppely::*;
 
 use bevy::prelude::*;
 use clap::*;
-use leafwing_input_manager::plugin::InputManagerSystem;
+use leafwing_input_manager::plugin::CentralInputStorePlugin;
 use leafwing_input_manager::prelude::*;
-use lightyear::input::client::InputSystems;
+use leafwing_input_manager::user_input::updating::EnabledInput;
 use lightyear::prelude::client::*;
 use lightyear::prelude::*;
 use std::time::Duration;
@@ -27,14 +26,8 @@ pub struct ServerAddr(pub SocketAddr);
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, startup);
-        app.add_systems(
-            FixedPreUpdate,
-            update_cursor
-                .chain()
-                .before(InputSystems::BufferClientInputs)
-                .in_set(InputManagerSystem::ManualControl),
-        );
 
+        app.add_systems(FixedUpdate, player_movement);
         app.add_systems(
             FixedPostUpdate,
             (render_other_players, render_object, display_debug).chain(),
@@ -50,13 +43,11 @@ impl Plugin for ClientPlugin {
 
 fn on_connected(trigger: On<Add, Controlled>, mut commands: Commands) {
     let input_map = InputMap::new([
-        (PlayerAction::Forward, KeyCode::KeyW),
-        (PlayerAction::Backward, KeyCode::KeyS),
-        (PlayerAction::Left, KeyCode::KeyA),
-        (PlayerAction::Right, KeyCode::KeyD),
         (PlayerAction::Shift, KeyCode::ShiftLeft),
         (PlayerAction::Catch, KeyCode::KeyF),
-    ]);
+    ])
+    .with_dual_axis(PlayerAction::Move, VirtualDPad::wasd())
+    .with_dual_axis(PlayerAction::MouseMove, MouseMove::default());
 
     commands
         .entity(trigger.entity)
@@ -83,7 +74,11 @@ fn startup(
     client.trigger(Connect::from);
 }
 
-fn hide_cursor(keyboard: Res<ButtonInput<KeyCode>>, mut cursor: Single<Mut<CursorOptions>>) {
+fn hide_cursor(
+    mut commands: Commands,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut cursor: Single<Mut<CursorOptions>>,
+) {
     if keyboard.just_pressed(KeyCode::Escape) {
         let mode = match cursor.grab_mode {
             CursorGrabMode::None => {
@@ -97,26 +92,23 @@ fn hide_cursor(keyboard: Res<ButtonInput<KeyCode>>, mut cursor: Single<Mut<Curso
         };
         cursor.grab_mode = mode;
     }
+
+    let mut input = EnabledInput::<MouseMove>::default();
+    if cursor.visible {
+        input.is_enabled = false;
+        commands.insert_resource(input);
+    } else {
+        commands.insert_resource(input);
+    }
 }
 
-fn update_cursor(
-    mut moved: MessageReader<MouseMotion>,
+fn player_movement(
     time: Res<Time>,
-    mut action_state: Single<&mut ActionState<PlayerAction>, With<InputMap<PlayerAction>>>,
-    cursor: Single<Ref<CursorOptions>>,
+    mut player_query: Query<(Mut<Transform>, &ActionState<PlayerAction>), With<PlayerId>>,
 ) {
-    let time_delta = time.delta_secs();
-
-    let mut delta = Vec2::ZERO;
-    for motion in moved.read() {
-        delta += motion.delta;
+    for (transform, action_state) in player_query.iter_mut() {
+        shared_movement(action_state, &time, transform);
     }
-
-    if delta == Vec2::ZERO || cursor.visible {
-        return;
-    }
-
-    action_state.set_axis_pair(&PlayerAction::MoveCursor, delta * time_delta);
 }
 
 #[derive(Parser, Debug)]
@@ -139,6 +131,8 @@ fn main() {
     app.add_plugins(ClientPlugins {
         tick_duration: delta,
     });
+
+    app.add_plugins(CentralInputStorePlugin);
 
     let host = cli.host.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::LOCALHOST);
     let host = SocketAddr::new(IpAddr::V4(host), SERVER_PORT);

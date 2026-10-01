@@ -19,6 +19,7 @@ pub struct ServerPlugin;
 impl Plugin for ServerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, startup);
+        app.add_systems(FixedUpdate, player_movement);
 
         app.add_observer(on_connected);
         app.add_observer(handle_connected);
@@ -101,12 +102,30 @@ fn startup(mut commands: Commands) -> Result {
     Ok(())
 }
 
+fn player_movement(
+    time: Res<Time>,
+    input_timeline: Option<SyncedLocalTimeline>,
+    mut player_query: Query<
+        (Mut<Transform>, Has<Predicted>, &ActionState<PlayerAction>),
+        With<PlayerId>,
+    >,
+) {
+    let client_is_synced = input_timeline.is_some();
+    for (transform, is_predicted, action_state) in player_query.iter_mut() {
+        if is_predicted && !client_is_synced {
+            continue;
+        }
+        shared_movement(action_state, &time, transform);
+    }
+}
+
 fn main() {
     let mut app = App::new();
 
     let delta = Duration::from_secs_f64(1.0 / TIMESTEP_HZ);
     app.add_plugins((
         TransformPlugin,
+        bevy::input::InputPlugin,
         AssetPlugin::default(),
         bevy::state::app::StatesPlugin,
         bevy::app::TerminalCtrlCHandlerPlugin,

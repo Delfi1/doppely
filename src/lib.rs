@@ -5,7 +5,7 @@
 
 mod protocol;
 use leafwing_input_manager::prelude::*;
-use lightyear::{avian3d::plugin::*, prediction::Predicted, prelude::SyncedLocalTimeline};
+use lightyear::avian3d::plugin::*;
 pub use protocol::*;
 
 use bevy::prelude::*;
@@ -19,6 +19,7 @@ pub const PITCH_LIMIT: f32 = std::f32::consts::FRAC_PI_2 - 0.01;
 pub const TIMESTEP_HZ: f64 = 64.0;
 pub const SERVER_PORT: u16 = 5000;
 pub const PLAYER_SPEED: f32 = 5.0;
+pub const MAX_ACCELERATION: f32 = 20.0;
 pub const SHIFT_MULTIPLIER: f32 = 1.7;
 
 pub const CHARACTER_WIDTH: f32 = 0.5;
@@ -27,11 +28,13 @@ pub const CHARACTER_HEIGHT: f32 = 1.2;
 pub fn shared_movement(
     action: &ActionState<PlayerAction>,
     time: &Time,
+    //mass: &ComputedMass,
     mut transform: Mut<Transform>,
+    //mut forces: ForcesItem,
 ) {
     // rotate player:
-    if let Some(cursor_data) = action.dual_axis_data(&PlayerAction::MoveCursor) {
-        let delta = cursor_data.pair;
+    if let Some(cursor_data) = action.dual_axis_data(&PlayerAction::MouseMove) {
+        let delta = cursor_data.pair * time.delta_secs();
         let (mut yaw, mut pitch, roll) = transform.rotation.to_euler(EulerRot::YXZ);
 
         yaw -= delta.x * SENSITIVITY;
@@ -39,24 +42,16 @@ pub fn shared_movement(
         pitch = pitch.clamp(-PITCH_LIMIT, PITCH_LIMIT);
 
         transform.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
+    }
+
+    let Some(move_data) = action.dual_axis_data(&PlayerAction::Move) else {
+        return;
     };
 
     // move:
     let mut movement = Vec3::ZERO;
-    let forward = *transform.forward();
-    let right = *transform.right();
-    if action.pressed(&PlayerAction::Forward) {
-        movement += forward;
-    }
-    if action.pressed(&PlayerAction::Backward) {
-        movement -= forward;
-    }
-    if action.pressed(&PlayerAction::Left) {
-        movement -= right;
-    }
-    if action.pressed(&PlayerAction::Right) {
-        movement += right;
-    }
+    movement += transform.forward() * move_data.pair.y;
+    movement += transform.right() * move_data.pair.x;
 
     // remove vertical movement
     movement.y = 0.0;
@@ -68,23 +63,6 @@ pub fn shared_movement(
         }
 
         transform.translation += movement;
-    }
-}
-
-fn player_movement(
-    time: Res<Time>,
-    input_timeline: Option<SyncedLocalTimeline>,
-    mut player_query: Query<
-        (Mut<Transform>, Has<Predicted>, &ActionState<PlayerAction>),
-        With<PlayerId>,
-    >,
-) {
-    let client_is_synced = input_timeline.is_some();
-    for (transform, is_predicted, action_state) in player_query.iter_mut() {
-        if is_predicted && !client_is_synced {
-            continue;
-        }
-        shared_movement(action_state, &time, transform);
     }
 }
 
@@ -128,7 +106,5 @@ impl Plugin for SharedPlugin {
                 .disable::<IslandPlugin>()
                 .disable::<IslandSleepingPlugin>(),
         );
-
-        app.add_systems(FixedUpdate, player_movement);
     }
 }
