@@ -7,12 +7,61 @@ use lightyear::prelude::*;
 use std::{io::BufRead, time::Duration};
 use strum::EnumCount;
 
-// use dfdx::prelude::*;
-// type Device = Cpu;
-// type Model = (Linear<1, 5>, ReLU, Linear<5, 10>);
+use dfdx::optim::*;
+use dfdx::prelude::*;
 
 const SERVER_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), SERVER_PORT);
 pub const ACTIONS: usize = PlayerAction::COUNT;
+
+#[cfg(feature = "cuda")]
+type Device = Cuda;
+
+#[cfg(not(feature = "cuda"))]
+type Device = Cpu;
+
+type Model = (
+    Linear<84, 128>,
+    ReLU,
+    Linear<128, 64>,
+    ReLU,
+    Linear<64, ACTIONS>,
+);
+
+type NpcModel = <Model as BuildOnDevice<Device, f32>>::Built;
+
+#[derive(Resource, Default, Deref, DerefMut)]
+pub struct ComputeDevice(pub Device);
+
+unsafe impl Sync for ComputeDevice {}
+unsafe impl Send for ComputeDevice {}
+
+unsafe impl Sync for Npc {}
+unsafe impl Send for Npc {}
+
+#[derive(Component)]
+pub struct Npc {
+    pub model: NpcModel,
+    pub optimizer: Adam<NpcModel, f32, Device>,
+}
+
+impl FromWorld for Npc {
+    fn from_world(world: &mut World) -> Self {
+        let dev = world.get_resource_or_init::<ComputeDevice>();
+
+        let model = NpcModel::build(&dev);
+        let optimizer = Adam::new(
+            &model,
+            AdamConfig {
+                lr: 1e-3,
+                betas: [0.9, 0.999],
+                eps: 1e-8,
+                weight_decay: Some(WeightDecay::Decoupled(1e-2)),
+            },
+        );
+
+        Self { model, optimizer }
+    }
+}
 
 pub struct ServerPlugin;
 
@@ -153,7 +202,8 @@ fn main() {
 #[derive(Resource, Default)]
 pub struct ReadLine(pub Option<std::thread::JoinHandle<String>>);
 
-fn process_input(read: ResMut<ReadLine>, mut state: ResMut<NextState<GameState>>) {
+//mut state: ResMut<NextState<GameState>>
+fn process_input(read: ResMut<ReadLine>) {
     let inner = read.into_inner();
     if inner.0.is_none() {
         inner.0 = Some(std::thread::spawn(move || {
@@ -186,19 +236,19 @@ fn process_input(read: ResMut<ReadLine>, mut state: ResMut<NextState<GameState>>
                 bevy::log::info!("Players: ...");
             }
             "mode" => {
-                let mode = args.first().cloned().unwrap_or_default();
+                let _mode = args.first().cloned().unwrap_or_default();
 
-                match mode.trim() {
-                    "editor" => {
-                        state.set(GameState::Editor);
-                        bevy::log::info!("Switched to mode: editor");
-                    }
-                    "lobby" => {
-                        state.set(GameState::Lobby);
-                        bevy::log::info!("Switched to mode: lobby");
-                    }
-                    _ => {}
-                }
+                // match mode.trim() {
+                //     "editor" => {
+                //         state.set(GameState::Editor);
+                //         bevy::log::info!("Switched to mode: editor");
+                //     }
+                //     "lobby" => {
+                //         state.set(GameState::Lobby);
+                //         bevy::log::info!("Switched to mode: lobby");
+                //     }
+                //     _ => {}
+                // }
             }
             v => {
                 bevy::log::warn!("Unknown command: {}", v);

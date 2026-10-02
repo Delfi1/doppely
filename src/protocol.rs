@@ -58,17 +58,6 @@ pub enum ItemType {
     Key = 1,
 }
 
-#[derive(
-    States, Resource, Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Default, Reflect,
-)]
-pub enum GameState {
-    Loading,
-    #[default]
-    Lobby,
-    InGame,
-    Editor,
-}
-
 #[derive(Clone)]
 pub struct ProtocolPlugin;
 
@@ -95,10 +84,5 @@ impl Plugin for ProtocolPlugin {
         app.component::<Glowing>().replicate();
 
         app.component::<ObjectMarker>().replicate();
-
-        // resources
-        app.resource::<GameState>().replicate();
-        app.init_state::<GameState>();
-        app.init_resource::<GameState>();
     }
 }

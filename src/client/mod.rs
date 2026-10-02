@@ -36,7 +36,6 @@ impl Plugin for ClientPlugin {
 
         app.add_observer(on_connected);
 
-        app.add_systems(PreUpdate, handle_state);
         app.insert_resource(ServerAddr(self.host));
     }
 }
@@ -56,10 +55,10 @@ fn on_connected(trigger: On<Add, Controlled>, mut commands: Commands) {
 
 fn startup(
     mut commands: Commands,
-    mut state: ResMut<NextState<GameState>>,
+    //mut state: ResMut<NextState<GameState>>,
     server_addr: Res<ServerAddr>,
 ) {
-    state.set(GameState::Loading);
+    //state.set(GameState::Loading);
 
     let mut client = commands.spawn((
         Client,
@@ -116,10 +115,6 @@ fn player_movement(
 pub struct Cli {
     #[arg(long, default_value = "127.0.0.1")]
     pub host: String,
-}
-
-fn handle_state(mut states: ResMut<NextState<GameState>>, state: Res<GameState>) {
-    states.set(state.clone());
 }
 
 fn main() {
