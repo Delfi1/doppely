@@ -5,70 +5,20 @@ use leafwing_input_manager::action_state::*;
 use lightyear::prelude::server::*;
 use lightyear::prelude::*;
 use std::{io::BufRead, time::Duration};
-use strum::EnumCount;
 
-use dfdx::optim::*;
-use dfdx::prelude::*;
+mod train;
+use train::*;
 
 const SERVER_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), SERVER_PORT);
-pub const ACTIONS: usize = PlayerAction::COUNT;
-
-#[cfg(feature = "cuda")]
-type Device = Cuda;
-
-#[cfg(not(feature = "cuda"))]
-type Device = Cpu;
-
-type Model = (
-    Linear<84, 128>,
-    ReLU,
-    Linear<128, 64>,
-    ReLU,
-    Linear<64, ACTIONS>,
-);
-
-type NpcModel = <Model as BuildOnDevice<Device, f32>>::Built;
-
-#[derive(Resource, Default, Deref, DerefMut)]
-pub struct ComputeDevice(pub Device);
-
-unsafe impl Sync for ComputeDevice {}
-unsafe impl Send for ComputeDevice {}
-
-unsafe impl Sync for Npc {}
-unsafe impl Send for Npc {}
-
-#[derive(Component)]
-pub struct Npc {
-    pub model: NpcModel,
-    pub optimizer: Adam<NpcModel, f32, Device>,
-}
-
-impl FromWorld for Npc {
-    fn from_world(world: &mut World) -> Self {
-        let dev = world.get_resource_or_init::<ComputeDevice>();
-
-        let model = NpcModel::build(&dev);
-        let optimizer = Adam::new(
-            &model,
-            AdamConfig {
-                lr: 1e-3,
-                betas: [0.9, 0.999],
-                eps: 1e-8,
-                weight_decay: Some(WeightDecay::Decoupled(1e-2)),
-            },
-        );
-
-        Self { model, optimizer }
-    }
-}
 
 pub struct ServerPlugin;
 
 impl Plugin for ServerPlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(TrainPlugin);
+
         app.add_systems(Startup, startup);
-        app.add_systems(FixedUpdate, player_movement);
+        app.add_systems(FixedUpdate, (player_rotation, player_movement).chain());
 
         app.add_observer(on_connected);
         app.add_observer(handle_connected);
@@ -98,7 +48,6 @@ pub(crate) fn handle_connected(
             PlayerId(client_id),
             ActionState::<PlayerAction>::default(),
             Position(Vec3::new(0.0, 0.0, 4.0)),
-            Transform::from_xyz(0.0, 0.0, 4.0),
             Replicate::to_clients(NetworkTarget::All),
             PredictionTarget::to_clients(NetworkTarget::Single(client_id)),
             InterpolationTarget::to_clients(NetworkTarget::AllExceptSingle(client_id)),
@@ -107,7 +56,8 @@ pub(crate) fn handle_connected(
                 lifetime: Lifetime::Persistent,
             },
             DisableReplicateHierarchy,
-            character_physics(),
+            object_bundle(RigidBody::Dynamic, ObjectMarker::Player),
+            player_physics(),
         ))
         .id();
 
@@ -127,8 +77,7 @@ fn startup(mut commands: Commands) -> Result {
     // Spawn test object - cube
     commands.spawn((
         Name::new("Cube"),
-        Transform::from_scale(Vec3::splat(0.5)),
-        ObjectMarker::Cube,
+        Position(Vec3::new(0.0, 0.0, 0.0)),
         Glowing {
             color: Srgba::new(100.0, 20.0, 200.0, 1.0),
         },
@@ -138,33 +87,54 @@ fn startup(mut commands: Commands) -> Result {
             intensity: 100_000.0,
         },
         Replicate::to_clients(NetworkTarget::All),
-        dynamic_physics(),
+        object_bundle(RigidBody::Dynamic, ObjectMarker::Cube),
     ));
 
     commands.spawn((
         Name::new("Floor"),
-        Transform::from_xyz(0.0, -2.2, 0.0).with_scale([10.0, 0.2, 10.0].into()),
-        ObjectMarker::Floor,
+        Position(Vec3::new(0.0, -2.2, 0.0)),
         Replicate::to_clients(NetworkTarget::All),
-        static_physics(),
+        object_bundle(RigidBody::Static, ObjectMarker::Floor),
     ));
     Ok(())
+}
+
+fn player_rotation(
+    time: Res<Time>,
+    input_timeline: Option<SyncedLocalTimeline>,
+    mut player_query: Query<
+        (Has<Predicted>, &ActionState<PlayerAction>, &mut Rotation),
+        With<PlayerId>,
+    >,
+) {
+    let client_is_synced = input_timeline.is_some();
+    for (is_predicted, action, mut rotation) in player_query.iter_mut() {
+        if is_predicted && !client_is_synced {
+            continue;
+        }
+        shared_rotation(action, &time, &mut rotation);
+    }
 }
 
 fn player_movement(
     time: Res<Time>,
     input_timeline: Option<SyncedLocalTimeline>,
     mut player_query: Query<
-        (Mut<Transform>, Has<Predicted>, &ActionState<PlayerAction>),
+        (
+            Has<Predicted>,
+            &ActionState<PlayerAction>,
+            &ComputedMass,
+            Forces,
+        ),
         With<PlayerId>,
     >,
 ) {
     let client_is_synced = input_timeline.is_some();
-    for (transform, is_predicted, action_state) in player_query.iter_mut() {
+    for (is_predicted, action, mass, forces) in player_query.iter_mut() {
         if is_predicted && !client_is_synced {
             continue;
         }
-        shared_movement(action_state, &time, transform);
+        shared_movement(action, &time, mass, forces);
     }
 }
 

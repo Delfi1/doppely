@@ -4,7 +4,6 @@ on:
   push:
     tags:
       - '*'
-  workflow_dispatch:
 
 env:
   use_git_lfs: false
@@ -26,8 +25,8 @@ jobs:
 
       - name: Build
         run: |
-          cargo build --bin client --features client --release --target x86_64-pc-windows-msvc
-          cargo build --bin server --features server --release --target x86_64-pc-windows-msvc
+          cargo build --bin client --features client --profile production --target x86_64-pc-windows-msvc
+          cargo build --bin server --features server --profile production --target x86_64-pc-windows-msvc
 
       - name: Prepare package
         run: |

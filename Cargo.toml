@@ -71,6 +71,8 @@ name = "server"
 path = "src/server/mod.rs"
 required-features = ["server"]
 
-[profile.release]
+[profile.production]
+inherits = "release"
 lto = "thin"
 strip = true
+codegen-units = 1

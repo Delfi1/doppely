@@ -1,5 +1,4 @@
 use bevy::camera::visibility::*;
-use bevy::color::palettes::css::*;
 pub use bevy::diagnostic::*;
 use bevy::prelude::*;
 use doppely::*;
@@ -41,30 +40,7 @@ pub fn display_debug(
     *text.as_deref_mut() = data;
 }
 
-pub fn render_other_players(
-    mut commands: Commands,
-    players: Query<Entity, (Without<Controlled>, Added<PlayerId>)>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    if players.is_empty() {
-        return;
-    }
-
-    let material = materials.add(StandardMaterial {
-        base_color: GRAY.into(),
-        ..default()
-    });
-    let model = meshes.add(Capsule3d::new(CHARACTER_WIDTH, CHARACTER_HEIGHT));
-
-    for entity in players.iter() {
-        commands
-            .entity(entity)
-            .insert((Mesh3d(model.clone()), MeshMaterial3d(material.clone())));
-    }
-}
-
-pub fn render_object(
+pub fn render_objects(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -75,20 +51,12 @@ pub fn render_object(
             Option<Ref<Glowing>>,
             Option<Ref<Light>>,
         ),
-        Added<ObjectMarker>,
+        (Added<ObjectMarker>, Without<Controlled>),
     >,
 ) {
     for (entity, marker, glowing, light) in objects.iter() {
-        let mesh = match *marker {
-            ObjectMarker::Cube | ObjectMarker::Floor => meshes.add(Cuboid::from_length(1.0)),
-        };
-
-        let mut material = match *marker {
-            ObjectMarker::Cube | ObjectMarker::Floor => StandardMaterial {
-                base_color: GRAY.into(),
-                ..default()
-            },
-        };
+        let mesh = meshes.add(marker.mesh());
+        let mut material = marker.material();
 
         if let Some(glowing) = glowing {
             material.emissive = LinearRgba::from(glowing.color);

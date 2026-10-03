@@ -27,11 +27,8 @@ impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, startup);
 
-        app.add_systems(FixedUpdate, player_movement);
-        app.add_systems(
-            FixedPostUpdate,
-            (render_other_players, render_object, display_debug).chain(),
-        );
+        app.add_systems(FixedUpdate, (player_rotation, player_movement).chain());
+        app.add_systems(FixedPostUpdate, (render_objects, display_debug).chain());
         app.add_systems(Update, hide_cursor);
 
         app.add_observer(on_connected);
@@ -101,12 +98,21 @@ fn hide_cursor(
     }
 }
 
+fn player_rotation(
+    time: Res<Time>,
+    mut player_query: Query<(&ActionState<PlayerAction>, Mut<Rotation>), With<PlayerId>>,
+) {
+    for (action, mut rotation) in player_query.iter_mut() {
+        shared_rotation(action, &time, &mut rotation);
+    }
+}
+
 fn player_movement(
     time: Res<Time>,
-    mut player_query: Query<(Mut<Transform>, &ActionState<PlayerAction>), With<PlayerId>>,
+    mut player_query: Query<(&ActionState<PlayerAction>, &ComputedMass, Forces), With<PlayerId>>,
 ) {
-    for (transform, action_state) in player_query.iter_mut() {
-        shared_movement(action_state, &time, transform);
+    for (action, mass, forces) in player_query.iter_mut() {
+        shared_movement(action, &time, mass, forces);
     }
 }
 
