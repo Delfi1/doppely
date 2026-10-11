@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 use dfdx::optim::*;
 use dfdx::prelude::*;
-use doppely::PlayerId;
 
 #[cfg(feature = "cuda")]
 type Device = Cuda;
@@ -57,9 +56,9 @@ impl Plugin for TrainPlugin {
 pub struct SelectedPlayer(pub Entity);
 
 // todo: Create data batches for model training
-pub fn take_batch(player: Option<Res<SelectedPlayer>>, query: Query<Entity, With<PlayerId>>) {
-    let Some(player) = player else { return };
-    let Some(data) = query.get(player.0).ok() else {
-        return;
-    };
-}
+// pub fn take_batch(player: Option<Res<SelectedPlayer>>, query: Query<Entity, With<PlayerId>>) {
+//     let Some(player) = player else { return };
+//     let Some(data) = query.get(player.0).ok() else {
+//         return;
+//     };
+// }

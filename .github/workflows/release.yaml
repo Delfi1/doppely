@@ -31,8 +31,8 @@ jobs:
       - name: Prepare package
         run: |
           mkdir out
-          cp target/x86_64-pc-windows-msvc/release/client.exe out/
-          cp target/x86_64-pc-windows-msvc/release/server.exe out/
+          cp target/x86_64-pc-windows-msvc/production/client.exe out/
+          cp target/x86_64-pc-windows-msvc/production/server.exe out/
           mkdir assets -ea 0
           cp -r assets out/
 

@@ -1,146 +1,61 @@
+use bevy::ecs::{lifecycle::HookContext, world::DeferredWorld};
 use doppely::*;
-
-use bevy::prelude::*;
-use leafwing_input_manager::action_state::*;
-use lightyear::prelude::server::*;
-use lightyear::prelude::*;
-use std::{io::BufRead, time::Duration};
-
-mod train;
-use train::*;
+use leafwing_input_manager::action_state::ActionState;
+use lightyear::{
+    connection::{client_of::ClientOf, server::Start},
+    prelude::{server::*, *},
+};
+use std::io::BufRead;
 
 const SERVER_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), SERVER_PORT);
+const SEND_INTERVAL: Duration = Duration::from_millis(16);
 
 pub struct ServerPlugin;
 
 impl Plugin for ServerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(TrainPlugin);
-
-        app.add_systems(Startup, startup);
-        app.add_systems(FixedUpdate, (player_rotation, player_movement).chain());
-
+        app.add_observer(handle_new);
         app.add_observer(on_connected);
-        app.add_observer(handle_connected);
+
+        app.add_systems(Startup, setup);
+        app.add_systems(Startup, start);
     }
 }
 
-// Event: On new client connected
-pub(crate) fn on_connected(trigger: On<Add, LinkOf>, mut commands: Commands) {
-    let name = "Client ".to_string() + &trigger.entity.index_u32().to_string();
-
-    commands
-        .entity(trigger.entity)
-        .insert((ReplicationSender, Name::from(name)));
+#[derive(Component, Debug)]
+#[component(on_add = ServerSettings::on_add)]
+pub struct ServerSettings {
+    pub conditioner: Option<RecvLinkConditioner>,
+    pub shared: SharedSettings,
 }
 
-pub(crate) fn handle_connected(
-    trigger: On<Add, Connected>,
-    query: Query<&RemoteId, With<ClientOf>>,
-    mut commands: Commands,
-) {
-    let Ok(client_id) = query.get(trigger.entity) else {
-        return;
-    };
-    let client_id = client_id.0;
-    let entity = commands
-        .spawn((
-            PlayerId(client_id),
-            ActionState::<PlayerAction>::default(),
-            Position(Vec3::new(0.0, 0.0, 4.0)),
-            Replicate::to_clients(NetworkTarget::All),
-            PredictionTarget::to_clients(NetworkTarget::Single(client_id)),
-            InterpolationTarget::to_clients(NetworkTarget::AllExceptSingle(client_id)),
-            ControlledBy {
-                owner: trigger.entity,
-                lifetime: Lifetime::Persistent,
-            },
-            DisableReplicateHierarchy,
-            object_bundle(RigidBody::Dynamic, ObjectMarker::Player),
-            player_physics(),
-        ))
-        .id();
+impl ServerSettings {
+    fn on_add(mut world: DeferredWorld, context: HookContext) {
+        let entity = context.entity;
+        world.commands().queue(move |world: &mut World| -> Result {
+            let mut entity_mut = world.entity_mut(entity);
+            let settings = entity_mut.take::<ServerSettings>().unwrap();
+            entity_mut.insert((
+                Name::from("Server"),
+                Endpoint::new(settings.conditioner.clone()),
+            ));
 
-    info!(
-        "Create player entity {:?} for client {:?}",
-        entity, client_id
-    );
-}
-
-fn startup(mut commands: Commands) -> Result {
-    let server = commands
-        .spawn((RawServer, LocalAddr(SERVER_ADDR), ServerUdpIo::default()))
-        .id();
-
-    commands.trigger(Start { entity: server });
-
-    // Spawn test object - cube
-    commands.spawn((
-        Name::new("Cube"),
-        Position(Vec3::new(0.0, 0.0, 0.0)),
-        Glowing {
-            color: Srgba::new(100.0, 20.0, 200.0, 1.0),
-        },
-        Light {
-            radius: 10.0,
-            color: Srgba::new(100.0, 20.0, 200.0, 1.0),
-            intensity: 100_000.0,
-        },
-        Replicate::to_clients(NetworkTarget::All),
-        object_bundle(RigidBody::Dynamic, ObjectMarker::Cube),
-    ));
-
-    commands.spawn((
-        Name::new("Floor"),
-        Position(Vec3::new(0.0, -2.2, 0.0)),
-        Replicate::to_clients(NetworkTarget::All),
-        object_bundle(RigidBody::Static, ObjectMarker::Floor),
-    ));
-    Ok(())
-}
-
-fn player_rotation(
-    time: Res<Time>,
-    input_timeline: Option<SyncedLocalTimeline>,
-    mut player_query: Query<
-        (Has<Predicted>, &ActionState<PlayerAction>, &mut Rotation),
-        With<PlayerId>,
-    >,
-) {
-    let client_is_synced = input_timeline.is_some();
-    for (is_predicted, action, mut rotation) in player_query.iter_mut() {
-        if is_predicted && !client_is_synced {
-            continue;
-        }
-        shared_rotation(action, &time, &mut rotation);
-    }
-}
-
-fn player_movement(
-    time: Res<Time>,
-    input_timeline: Option<SyncedLocalTimeline>,
-    mut player_query: Query<
-        (
-            Has<Predicted>,
-            &ActionState<PlayerAction>,
-            &ComputedMass,
-            Forces,
-        ),
-        With<PlayerId>,
-    >,
-) {
-    let client_is_synced = input_timeline.is_some();
-    for (is_predicted, action, mass, forces) in player_query.iter_mut() {
-        if is_predicted && !client_is_synced {
-            continue;
-        }
-        shared_movement(action, &time, mass, forces);
+            entity_mut.insert(NetcodeServer::new(NetcodeConfig {
+                protocol_id: settings.shared.protocol_id,
+                private_key: settings.shared.private_key,
+                server_addr_check: false,
+                ..Default::default()
+            }));
+            entity_mut.insert((LocalAddr(SERVER_ADDR), ServerUdpIo::default()));
+            Ok(())
+        });
     }
 }
 
 fn main() {
     let mut app = App::new();
 
+    app.insert_resource(ReplicationMetadata::new(SEND_INTERVAL));
     let delta = Duration::from_secs_f64(1.0 / TIMESTEP_HZ);
     app.add_plugins((
         TransformPlugin,
@@ -149,7 +64,7 @@ fn main() {
         bevy::state::app::StatesPlugin,
         bevy::app::TerminalCtrlCHandlerPlugin,
         bevy::log::LogPlugin::default(),
-        MinimalPlugins.set(bevy::app::ScheduleRunnerPlugin::run_loop(delta)),
+        MinimalPlugins,
         ServerPlugins {
             tick_duration: delta,
         },
@@ -158,7 +73,15 @@ fn main() {
     app.init_resource::<Assets<Mesh>>()
         .add_message::<AssetEvent<Mesh>>();
 
-    app.add_plugins((SharedPlugin, ServerPlugin));
+    app.add_plugins(SharedPlugin);
+
+    let conditioner = LinkConditionerConfig::average_condition().half();
+    app.world_mut().spawn(ServerSettings {
+        conditioner: Some(RecvLinkConditioner::new(conditioner.clone())),
+        shared: SHARED_SETTINGS,
+    });
+
+    app.add_plugins(ServerPlugin);
 
     // Command line input
     app.init_resource::<ReadLine>();
@@ -167,13 +90,80 @@ fn main() {
     app.run();
 }
 
+/// Test world setup
+fn setup(mut commands: Commands) {
+    commands.spawn((
+        Name::new("Floor"),
+        ObjectMarker::Floor,
+        Position::new(Vec3::ZERO),
+        Replicate::to_clients(NetworkTarget::All),
+    ));
+
+    commands.spawn((
+        Name::new("Crate"),
+        ObjectMarker::Crate,
+        Glowing {
+            color: Srgba::new(100.0, 20.0, 200.0, 1.0),
+        },
+        Light {
+            radius: 10.0,
+            color: Srgba::new(100.0, 20.0, 200.0, 1.0),
+            intensity: 100_000.0,
+        },
+        Position::new(Vec3::new(1.0, 2.0, 0.0)),
+        Replicate::to_clients(NetworkTarget::All),
+        PredictionTarget::to_clients(NetworkTarget::All),
+    ));
+}
+
+/// Start sever listening
+fn start(mut commands: Commands, server: Single<Entity, With<Server>>) {
+    commands.trigger(Start {
+        entity: server.into_inner(),
+    });
+}
+
+fn handle_new(trigger: On<Add, LinkOf>, mut commands: Commands) {
+    commands.entity(trigger.entity).insert(ReplicationSender);
+}
+
+fn on_connected(
+    trigger: On<Add, Connected>,
+    query: Query<&RemoteId, With<ClientOf>>,
+    mut commands: Commands,
+) {
+    let Ok(client_id) = query.get(trigger.entity) else {
+        return;
+    };
+    let client_id = client_id.0;
+
+    commands.spawn((
+        Name::new("Player"),
+        ObjectMarker::Player,
+        ActionState::<PlayerAction>::default(),
+        Position(Vec3::new(0.0, 2.0, 4.0)),
+        PlayerId(client_id),
+        DisableReplicateHierarchy,
+        Replicate::to_clients(NetworkTarget::All),
+        PredictionTarget::to_clients(NetworkTarget::All),
+        InterpolationTarget::to_clients(NetworkTarget::AllExceptSingle(client_id)),
+        ControlledBy {
+            owner: trigger.entity,
+            lifetime: Default::default(),
+        },
+    ));
+}
+
 /// Server CLI realisation
 
 #[derive(Resource, Default)]
 pub struct ReadLine(pub Option<std::thread::JoinHandle<String>>);
 
-//mut state: ResMut<NextState<GameState>>
-fn process_input(read: ResMut<ReadLine>) {
+fn process_input(
+    read: ResMut<ReadLine>,
+    objects: Query<(&ObjectType, &Position)>,
+    players: Query<Entity, With<PlayerId>>,
+) {
     let inner = read.into_inner();
     if inner.0.is_none() {
         inner.0 = Some(std::thread::spawn(move || {
@@ -195,7 +185,7 @@ fn process_input(read: ResMut<ReadLine>) {
 
         let mut data = line.split(' ');
         let command = data.next().unwrap_or_default();
-        let args = data.collect::<Vec<_>>();
+        let _args = data.collect::<Vec<_>>();
 
         match command {
             "exit" | "quit" | "stop" => {
@@ -203,25 +193,16 @@ fn process_input(read: ResMut<ReadLine>) {
                 std::process::exit(0);
             }
             "players" => {
-                bevy::log::info!("Players: ...");
+                let count = players.iter().count();
+                bevy::log::info!("Players: {}", count);
             }
-            "mode" => {
-                let _mode = args.first().cloned().unwrap_or_default();
-
-                // match mode.trim() {
-                //     "editor" => {
-                //         state.set(GameState::Editor);
-                //         bevy::log::info!("Switched to mode: editor");
-                //     }
-                //     "lobby" => {
-                //         state.set(GameState::Lobby);
-                //         bevy::log::info!("Switched to mode: lobby");
-                //     }
-                //     _ => {}
-                // }
+            "debug" => {
+                for (ty, pos) in objects {
+                    bevy::log::info!("{:?} Position: {:.3}", ty, pos.0);
+                }
             }
             v => {
-                bevy::log::warn!("Unknown command: {}", v);
+                bevy::log::warn!("Unknown command: \"{}\"", v);
             }
         }
     }

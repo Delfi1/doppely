@@ -14,7 +14,7 @@ pub fn display_debug(
     text: Option<Single<Mut<Text>, With<DebugText>>>,
 ) {
     let Some(mut text) = text else {
-        commands.spawn((Text::new("_"), DebugText));
+        commands.spawn((Text::default(), DebugText));
         return;
     };
 
@@ -31,51 +31,53 @@ pub fn display_debug(
         .round() as u64;
 
     let data = format!(
-        "Fps: {}\nPlayer entity: {:?}\nCoords: {:?}",
-        fps,
-        entity,
-        transform.translation.to_array()
+        "Fps: {}\nPlayer entity: {:?}\nCoords: {:.3}",
+        fps, entity, transform.translation
     );
     bevy::log::debug!("{}", data);
     *text.as_deref_mut() = data;
 }
 
-pub fn render_objects(
+pub fn handle_objects(
+    trigger: On<Add, ObjectType>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    objects: Query<
+    object: Query<
         (
-            Entity,
-            Ref<ObjectMarker>,
+            Ref<ObjectType>,
+            Ref<ObjectSize>,
             Option<Ref<Glowing>>,
             Option<Ref<Light>>,
         ),
-        (Added<ObjectMarker>, Without<Controlled>),
+        Without<Controlled>,
     >,
 ) {
-    for (entity, marker, glowing, light) in objects.iter() {
-        let mesh = meshes.add(marker.mesh());
-        let mut material = marker.material();
+    let entity = trigger.entity;
+    let Ok((object, size, glowing, light)) = object.get(entity) else {
+        return;
+    };
 
-        if let Some(glowing) = glowing {
-            material.emissive = LinearRgba::from(glowing.color);
-        }
+    let mesh = meshes.add(object.mesh(size.0));
+    let mut material = object.material();
 
-        let material = materials.add(material.clone());
-        commands
-            .entity(entity)
-            .insert((Mesh3d(mesh.clone()), MeshMaterial3d(material.clone())));
+    if let Some(glowing) = glowing {
+        material.emissive = LinearRgba::from(glowing.color);
+    }
 
-        if let Some(light) = light {
-            commands.entity(entity).insert((
-                PointLight {
-                    radius: light.radius,
-                    intensity: light.intensity,
-                    ..default()
-                },
-                NoFrustumCulling,
-            ));
-        }
+    let material = materials.add(material.clone());
+    commands
+        .entity(entity)
+        .insert((Mesh3d(mesh.clone()), MeshMaterial3d(material.clone())));
+
+    if let Some(light) = light {
+        commands.entity(entity).insert((
+            PointLight {
+                radius: light.radius,
+                intensity: light.intensity,
+                ..default()
+            },
+            NoFrustumCulling,
+        ));
     }
 }

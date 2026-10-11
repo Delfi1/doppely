@@ -1,130 +1,87 @@
-use bevy::post_process::bloom::*;
-use bevy::window::*;
-use doppely::*;
-
-use bevy::prelude::*;
-use clap::*;
-use leafwing_input_manager::plugin::CentralInputStorePlugin;
-use leafwing_input_manager::prelude::*;
-use leafwing_input_manager::user_input::updating::EnabledInput;
-use lightyear::prelude::client::*;
-use lightyear::prelude::*;
-use std::time::Duration;
-
+mod game;
 mod renderer;
+
+use bevy::ecs::{lifecycle::HookContext, world::DeferredWorld};
+use leafwing_input_manager::input_map::InputMap;
+use lightyear::{
+    netcode::{NetcodeClient, client_plugin::NetcodeConfig},
+    prelude::{client::ClientPlugins, *},
+};
+
+use doppely::*;
+use game::*;
 use renderer::*;
 
-pub struct ClientPlugin {
-    pub host: SocketAddr,
-}
+const CLIENT_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), CLIENT_PORT);
 
-const CLIENT_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 4000);
-
-#[derive(Resource, Clone, Deref)]
-pub struct ServerAddr(pub SocketAddr);
+pub struct ClientPlugin;
 
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, startup);
+        app.add_plugins(GamePlugin);
 
-        app.add_systems(FixedUpdate, (player_rotation, player_movement).chain());
-        app.add_systems(FixedPostUpdate, (render_objects, display_debug).chain());
-        app.add_systems(Update, hide_cursor);
+        app.add_systems(FixedPostUpdate, display_debug);
 
-        app.add_observer(on_connected);
-
-        app.insert_resource(ServerAddr(self.host));
+        app.add_observer(handle_objects);
+        app.add_observer(setup_controller);
     }
 }
 
-fn on_connected(trigger: On<Add, Controlled>, mut commands: Commands) {
+#[derive(Component, Clone, Debug)]
+#[component(on_add = ClientSettings::on_add)]
+pub struct ClientSettings {
+    pub server_addr: SocketAddr,
+    pub conditioner: Option<RecvLinkConditioner>,
+    pub shared: SharedSettings,
+}
+
+impl ClientSettings {
+    fn on_add(mut world: DeferredWorld, context: HookContext) {
+        let entity = context.entity;
+        world.commands().queue(move |world: &mut World| -> Result {
+            world.insert_resource(PredictionManager::default());
+
+            let mut entity_mut = world.entity_mut(entity);
+            let settings = entity_mut.take::<ClientSettings>().unwrap();
+            entity_mut.insert((
+                ReplicationReceiver,
+                Link::default().with_conditioner(settings.conditioner.clone()),
+                LocalAddr(CLIENT_ADDR),
+                PeerAddr(settings.server_addr),
+                Name::from("Client"),
+            ));
+
+            let auth = Authentication::Manual {
+                server_addr: settings.server_addr,
+                client_id: rand::random(),
+                private_key: settings.shared.private_key,
+                protocol_id: settings.shared.protocol_id,
+            };
+            let netcode_config = NetcodeConfig {
+                client_timeout_secs: 3,
+                token_expire_secs: -1,
+                ..default()
+            };
+            entity_mut.insert(NetcodeClient::new(auth, netcode_config)?);
+            entity_mut.insert(UdpIo::default());
+
+            Ok(())
+        });
+    }
+}
+
+fn setup_controller(trigger: On<Add, Controlled>, mut commands: Commands) {
+    let entity = trigger.entity;
     let input_map = InputMap::new([
         (PlayerAction::Shift, KeyCode::ShiftLeft),
         (PlayerAction::Catch, KeyCode::KeyF),
-    ])
-    .with_dual_axis(PlayerAction::Move, VirtualDPad::wasd())
-    .with_dual_axis(PlayerAction::MouseMove, MouseMove::default());
+    ]);
 
-    commands
-        .entity(trigger.entity)
-        .insert((input_map, Camera3d::default(), Bloom::default()));
-}
-
-fn startup(
-    mut commands: Commands,
-    //mut state: ResMut<NextState<GameState>>,
-    server_addr: Res<ServerAddr>,
-) {
-    //state.set(GameState::Loading);
-
-    let mut client = commands.spawn((
-        Client,
-        LocalAddr(CLIENT_ADDR),
-        PeerAddr(server_addr.0),
-        Link::default(),
-        ReplicationReceiver,
-        RawClient,
-        UdpIo::default(),
-    ));
-
-    client.trigger(Connect::from);
-}
-
-fn hide_cursor(
-    mut commands: Commands,
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut cursor: Single<Mut<CursorOptions>>,
-) {
-    if keyboard.just_pressed(KeyCode::Escape) {
-        let mode = match cursor.grab_mode {
-            CursorGrabMode::None => {
-                cursor.visible = false;
-                CursorGrabMode::Confined
-            }
-            _ => {
-                cursor.visible = true;
-                CursorGrabMode::None
-            }
-        };
-        cursor.grab_mode = mode;
-    }
-
-    let mut input = EnabledInput::<MouseMove>::default();
-    if cursor.visible {
-        input.is_enabled = false;
-        commands.insert_resource(input);
-    } else {
-        commands.insert_resource(input);
-    }
-}
-
-fn player_rotation(
-    time: Res<Time>,
-    mut player_query: Query<(&ActionState<PlayerAction>, Mut<Rotation>), With<PlayerId>>,
-) {
-    for (action, mut rotation) in player_query.iter_mut() {
-        shared_rotation(action, &time, &mut rotation);
-    }
-}
-
-fn player_movement(
-    time: Res<Time>,
-    mut player_query: Query<(&ActionState<PlayerAction>, &ComputedMass, Forces), With<PlayerId>>,
-) {
-    for (action, mass, forces) in player_query.iter_mut() {
-        shared_movement(action, &time, mass, forces);
-    }
-}
-
-#[derive(Parser, Debug)]
-#[command(version, about)]
-pub struct Cli {
-    #[arg(long, default_value = "127.0.0.1")]
-    pub host: String,
+    commands.entity(entity).insert(input_map);
+    commands.spawn(Camera3d::default());
 }
 
 fn main() {
-    let cli = Cli::parse();
     let mut app = App::new();
 
     let delta = Duration::from_secs_f64(1.0 / TIMESTEP_HZ);
@@ -133,13 +90,25 @@ fn main() {
         tick_duration: delta,
     });
 
-    app.add_plugins(CentralInputStorePlugin);
-
-    let host = cli.host.parse::<Ipv4Addr>().unwrap_or(Ipv4Addr::LOCALHOST);
-    let host = SocketAddr::new(IpAddr::V4(host), SERVER_PORT);
-
     app.add_plugins(SharedPlugin);
-    app.add_plugins(ClientPlugin { host });
 
+    let conditioner = LinkConditionerConfig::average_condition().half();
+    // TODO:
+    let server_addr = SocketAddr::new(Ipv4Addr::new(192, 168, 3, 5).into(), SERVER_PORT);
+    app.world_mut().spawn(ClientSettings {
+        server_addr,
+        conditioner: Some(RecvLinkConditioner::new(conditioner.clone())),
+        shared: SHARED_SETTINGS,
+    });
+
+    app.add_plugins(ClientPlugin);
+
+    app.add_systems(Startup, connect);
     app.run();
+}
+
+fn connect(mut commands: Commands, client: Single<Entity, With<Client>>) {
+    commands.trigger(Connect {
+        entity: client.into_inner(),
+    });
 }

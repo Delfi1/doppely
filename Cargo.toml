@@ -1,12 +1,10 @@
 [package]
 name = "doppely"
-version = "0.0.2"
+version = "0.0.4"
 edition = "2024"
 
 [features]
-default = ["lightyear/raw_connection", "udp"]
-netcode = ["lightyear/netcode"]
-udp = ["lightyear/udp"]
+default = ["lightyear/netcode", "lightyear/udp"]
 cuda = ["dfdx/cuda"]
 
 client = [
@@ -22,7 +20,6 @@ client = [
     "bevy/bevy_window",
     "bevy/default_font",
     "lightyear/client",
-    "leafwing-input-manager/mouse"
 ]
 
 server = [
@@ -39,11 +36,16 @@ clap = { version = "4.6.7", features = ["derive"] }
 leafwing-input-manager = "0.21.0"
 
 # Сетевая библиотека
-lightyear = { version="0.30", features = ["avian3d", "interpolation", "prediction", "replication", "leafwing"] }
+lightyear = {
+    git = "https://github.com/cBournhonesque/lightyear",
+    rev = "96ded4e",
+    features = ["avian3d", "interpolation", "prediction", "replication", "leafwing"]
+}
 
 # Библиотека для нейронной сети
 dfdx = { version = "0.13.0", optional = true }
 strum = { version = "0.28.0", features = ["derive"], optional = true }
+rand = "0.10.3"
 
 # Движок для обработки логики игры и рендеринга
 [dependencies.bevy]
@@ -59,7 +61,13 @@ features = [
 # Движок физики в 3d
 [dependencies.avian3d]
 version = "0.7"
-features = ["serialize"]
+features = [
+  "3d",
+  "f32",
+  "parry-f32",
+  "parallel",
+  "serialize",
+]
 
 [[bin]]
 name = "client"
