@@ -7,6 +7,9 @@ use lightyear::{
 };
 use std::io::BufRead;
 
+mod train;
+use train::*;
+
 const SERVER_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), SERVER_PORT);
 const SEND_INTERVAL: Duration = Duration::from_millis(16);
 
@@ -14,6 +17,8 @@ pub struct ServerPlugin;
 
 impl Plugin for ServerPlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(TrainPlugin);
+
         app.add_observer(handle_new);
         app.add_observer(on_connected);
 
@@ -94,23 +99,29 @@ fn main() {
 fn setup(mut commands: Commands) {
     commands.spawn((
         Name::new("Floor"),
-        ObjectMarker::Floor,
+        ObjectType::Cuboid,
+        RigidBody::Static,
+        Friction::new(0.8),
+        ObjectSize(Vec3::new(10.0, 0.2, 10.0)),
         Position::new(Vec3::ZERO),
         Replicate::to_clients(NetworkTarget::All),
     ));
 
     commands.spawn((
         Name::new("Crate"),
-        ObjectMarker::Crate,
+        ObjectType::Cuboid,
+        RigidBody::Dynamic,
+        Friction::new(0.8),
+        ObjectSize(Vec3::splat(0.5)),
+        Position::new(Vec3::new(1.0, 2.0, 0.0)),
         Glowing {
-            color: Srgba::new(100.0, 20.0, 200.0, 1.0),
+            color: Srgba::new(100.0, 20.0, 200.0, 0.5),
         },
         Light {
             radius: 10.0,
-            color: Srgba::new(100.0, 20.0, 200.0, 1.0),
+            color: Srgba::new(100.0, 20.0, 200.0, 0.5),
             intensity: 100_000.0,
         },
-        Position::new(Vec3::new(1.0, 2.0, 0.0)),
         Replicate::to_clients(NetworkTarget::All),
         PredictionTarget::to_clients(NetworkTarget::All),
     ));
@@ -138,10 +149,19 @@ fn on_connected(
     let client_id = client_id.0;
 
     commands.spawn((
-        Name::new("Player"),
-        ObjectMarker::Player,
-        ActionState::<PlayerAction>::default(),
+        // Player physics bundle
+        RigidBody::Dynamic,
+        ObjectType::Capsule,
+        LockedAxes::new()
+            .lock_rotation_x()
+            .lock_rotation_y()
+            .lock_rotation_z(),
+        ObjectSize(Vec2::new(0.5, 1.2).xyx()),
         Position(Vec3::new(0.0, 2.0, 4.0)),
+        Friction::new(0.95),
+        // Player object data
+        Name::new("Player"),
+        ActionState::<PlayerAction>::default(),
         PlayerId(client_id),
         DisableReplicateHierarchy,
         Replicate::to_clients(NetworkTarget::All),

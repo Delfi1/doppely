@@ -44,15 +44,14 @@ fn hide_cursor(mut cursor: Single<Mut<CursorOptions>>) {
 }
 
 fn controller_input(
-    mut action: Query<(&Transform, &mut ActionState<PlayerAction>), With<InputMap<PlayerAction>>>,
-    mut camera: Query<Mut<Transform>, (With<Camera3d>, Without<InputMap<PlayerAction>>)>,
+    mut action: Query<&mut ActionState<PlayerAction>, With<InputMap<PlayerAction>>>,
+    mut camera: Query<Mut<Transform>, With<Camera3d>>,
     mut mouse: MessageReader<MouseMotion>,
     cursor: Query<Ref<CursorOptions>>,
-    keyboard: Res<ButtonInput<KeyCode>>,
     mut yaw: Local<f32>,
     mut pitch: Local<f32>,
 ) {
-    let Ok((player, mut action)) = action.single_mut() else {
+    let Ok(mut action) = action.single_mut() else {
         return;
     };
     let Ok(mut camera) = camera.single_mut() else {
@@ -74,26 +73,6 @@ fn controller_input(
         *pitch = pitch.clamp(-PITCH_LIMIT, PITCH_LIMIT);
     }
 
-    camera.translation = player.translation;
-    camera.rotation = Quat::from_euler(EulerRot::YXZ, *yaw, *pitch, 0.0);
-    let mut movement = Vec3::ZERO;
-    let rotation = Quat::from_rotation_y(*yaw);
-    let forward = -(rotation * Vec3::Z);
-    let right = rotation * Vec3::X;
-
-    if keyboard.pressed(KeyCode::KeyW) {
-        movement += forward;
-    }
-    if keyboard.pressed(KeyCode::KeyA) {
-        movement -= right;
-    }
-    if keyboard.pressed(KeyCode::KeyS) {
-        movement -= forward;
-    }
-    if keyboard.pressed(KeyCode::KeyD) {
-        movement += right;
-    }
-
+    camera.rotation = Quat::from_rotation_x(*pitch);
     action.set_axis_pair(&PlayerAction::Rotation, Vec2::new(*pitch, *yaw));
-    action.set_axis_pair(&PlayerAction::Move, movement.xz());
 }

@@ -9,6 +9,9 @@ env:
   use_git_lfs: false
   bin_file: out.zip
 
+permissions:
+  contents: write
+
 jobs:
   release:
     runs-on: windows-latest

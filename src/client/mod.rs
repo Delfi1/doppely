@@ -2,7 +2,8 @@ mod game;
 mod renderer;
 
 use bevy::ecs::{lifecycle::HookContext, world::DeferredWorld};
-use leafwing_input_manager::input_map::InputMap;
+use bevy_lunex::prelude::*;
+use leafwing_input_manager::{input_map::InputMap, user_input::VirtualDPad};
 use lightyear::{
     netcode::{NetcodeClient, client_plugin::NetcodeConfig},
     prelude::{client::ClientPlugins, *},
@@ -19,11 +20,9 @@ pub struct ClientPlugin;
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(GamePlugin);
-
-        app.add_systems(FixedPostUpdate, display_debug);
-
-        app.add_observer(handle_objects);
         app.add_observer(setup_controller);
+
+        app.add_plugins(RenderingPlugin);
     }
 }
 
@@ -75,10 +74,13 @@ fn setup_controller(trigger: On<Add, Controlled>, mut commands: Commands) {
     let input_map = InputMap::new([
         (PlayerAction::Shift, KeyCode::ShiftLeft),
         (PlayerAction::Catch, KeyCode::KeyF),
-    ]);
+    ])
+    .with_dual_axis(PlayerAction::Move, VirtualDPad::wasd());
 
-    commands.entity(entity).insert(input_map);
-    commands.spawn(Camera3d::default());
+    commands
+        .entity(entity)
+        .insert((input_map, InheritedVisibility::VISIBLE))
+        .with_child(controller_camera());
 }
 
 fn main() {
@@ -101,8 +103,7 @@ fn main() {
         shared: SHARED_SETTINGS,
     });
 
-    app.add_plugins(ClientPlugin);
-
+    app.add_plugins((ClientPlugin, UiLunexPlugins));
     app.add_systems(Startup, connect);
     app.run();
 }

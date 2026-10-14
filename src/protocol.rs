@@ -14,6 +14,8 @@ pub struct ProtocolPlugin;
 
 impl Plugin for ProtocolPlugin {
     fn build(&self, app: &mut App) {
+        app.init_state::<AppState>();
+
         app.add_plugins(InputPlugin::<PlayerAction> {
             config: InputConfig {
                 rebroadcast_inputs: true,
@@ -23,12 +25,17 @@ impl Plugin for ProtocolPlugin {
 
         app.component::<Name>().replicate();
         app.component::<PlayerId>().replicate();
-        app.component::<ObjectMarker>().replicate();
+        app.component::<ObjectType>().replicate();
+        app.component::<ObjectSize>().replicate();
         app.component::<Glowing>().replicate();
         app.component::<Light>().replicate();
 
+        app.component::<RigidBody>().replicate();
+        app.component::<Friction>().replicate();
+        app.component::<LockedAxes>().replicate();
+
         // Create new object from markers
-        app.add_observer(new_marker);
+        app.add_systems(FixedPostUpdate, setup_collision);
     }
 }
 
@@ -82,55 +89,6 @@ impl ObjectType {
     }
 }
 
-/// Object on scene
-#[derive(Component, Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Reflect)]
-pub enum ObjectMarker {
-    Crate,
-    Floor,
-    // todo: create much object's
-    Player,
-}
-
-impl ObjectMarker {
-    pub fn bundle(&self) -> impl Bundle {
-        match self {
-            Self::Crate => {
-                let t = ObjectType::Cuboid;
-                let l = LockedAxes::new();
-                let s = ObjectSize(Vec3::splat(0.5));
-                let f = Friction::new(0.6);
-                let c = t.collider(s.0);
-                let r = RigidBody::Dynamic;
-
-                (t, l, s, f, c, r)
-            }
-            Self::Floor => {
-                let t = ObjectType::Cuboid;
-                let l = LockedAxes::new();
-                let s = ObjectSize(Vec3::new(10.0, 0.2, 10.0));
-                let f = Friction::new(0.6);
-                let c = t.collider(s.0);
-                let r = RigidBody::Static;
-
-                (t, l, s, f, c, r)
-            }
-            Self::Player => {
-                let t = ObjectType::Capsule;
-                let l = LockedAxes::new()
-                    .lock_rotation_x()
-                    .lock_rotation_y()
-                    .lock_rotation_z();
-                let s = ObjectSize(Vec2::new(0.5, 1.2).xyx());
-                let f = Friction::new(0.6);
-                let c = t.collider(s.0);
-                let r = RigidBody::Dynamic;
-
-                (t, l, s, f, c, r)
-            }
-        }
-    }
-}
-
 #[derive(Component, Clone, Debug, Reflect, Serialize, Deserialize)]
 /// Object glowing Marker
 pub struct Glowing {
@@ -145,13 +103,13 @@ pub struct Light {
     pub intensity: f32,
 }
 
-pub fn new_marker(
-    trigger: On<Add, ObjectMarker>,
-    query: Query<&ObjectMarker>,
+pub fn setup_collision(
+    query: Query<(Entity, &ObjectType, &ObjectSize), Changed<ObjectSize>>,
     mut commands: Commands,
 ) {
-    let marker = query.get(trigger.entity).unwrap();
-    commands.entity(trigger.entity).insert(marker.bundle());
+    for (entity, object, size) in query.iter() {
+        commands.entity(entity).insert(object.collider(size.0));
+    }
 }
 
 /// Main inputs data
@@ -171,4 +129,14 @@ impl Actionlike for PlayerAction {
             _ => InputControlKind::Button,
         }
     }
+}
+
+/// Server and client app state
+#[derive(States, Debug, Clone, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub enum AppState {
+    Loading,
+    #[default]
+    Lobby,
+    Editor,
+    InGame,
 }

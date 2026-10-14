@@ -17,9 +17,8 @@ pub const SHARED_SETTINGS: SharedSettings = SharedSettings {
     private_key: [0; 32],
 };
 
-const MAX_SPEED: f32 = 12.0;
-const MAX_ACCELERATION: f32 = 8.0;
-const SHIFT_MULTIPLIER: f32 = 1.7;
+const PLAYER_SPEED: f32 = 3.0;
+const SHIFT_MULTIPLIER: f32 = 1.17;
 
 #[derive(Copy, Clone, Debug)]
 pub struct SharedSettings {
@@ -49,7 +48,7 @@ impl Plugin for SharedPlugin {
                 .disable::<IslandSleepingPlugin>(),
         );
 
-        app.add_systems(FixedUpdate, (player_rotation, player_movement));
+        app.add_systems(FixedUpdate, (player_rotation, player_movement).chain());
     }
 }
 
@@ -67,40 +66,33 @@ pub fn player_rotation(
     }
 }
 
-pub fn player_movement(
-    time: Res<Time>,
-    mut query: Query<(
-        &ComputedMass,
-        &ActionState<PlayerAction>,
-        Forces,
-        Has<Predicted>,
-    )>,
-) {
-    for (mass, action, mut forces, _predicted) in query.iter_mut() {
+pub fn player_movement(mut query: Query<(&ActionState<PlayerAction>, Forces, Has<Predicted>)>) {
+    for (action, mut forces, _predicted) in query.iter_mut() {
         #[cfg(feature = "client")]
         if !_predicted {
             continue;
         }
 
-        let velocity_delta = MAX_ACCELERATION * time.delta_secs();
         let m = action.axis_pair(&PlayerAction::Move).normalize_or_zero();
-
         if m == Vec2::ZERO {
             continue;
         }
 
-        let move_dir = Vec3::new(m.x, 0.0, m.y);
+        let rotation = forces.rotation();
+        let forward = -(rotation * Vec3::Z) * m.y;
+        let right = rotation * Vec3::X * m.x;
+        let move_dir = forward + right;
 
-        let linear_velocity = forces.linear_velocity();
-        let ground_linear = Vec3::new(linear_velocity.x, 0.0, linear_velocity.z);
-        let mut desired_linear = move_dir * MAX_SPEED;
+        let f = (rotation * Vec3::NEG_Z).xz();
+        let alpha = f.angle_to(move_dir.xz());
+        let l = 0.8 + 0.2 * alpha.cos();
+
+        let mut velocity = move_dir * l * PLAYER_SPEED;
         if action.pressed(&PlayerAction::Shift) {
-            desired_linear *= SHIFT_MULTIPLIER;
+            velocity *= SHIFT_MULTIPLIER;
         }
 
-        let new_ground_velocity = ground_linear.move_towards(desired_linear, velocity_delta);
-        let acceleration = (new_ground_velocity - ground_linear) / time.delta_secs();
-
-        forces.apply_force(acceleration * mass.value());
+        forces.linear_velocity_mut().x = velocity.x;
+        forces.linear_velocity_mut().z = velocity.z;
     }
 }
