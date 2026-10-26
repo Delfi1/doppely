@@ -1,4 +1,5 @@
-mod protocol;
+pub mod protocol;
+pub mod servers;
 
 use leafwing_input_manager::action_state::ActionState;
 use lightyear::avian3d::plugin::*;

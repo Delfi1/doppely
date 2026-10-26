@@ -1,2 +1,5 @@
 /target
 Cargo.lock
+
+# Артефакт devtools bevy-react (создаётся при запуске клиента)
+/.bevy-react-devtools.json

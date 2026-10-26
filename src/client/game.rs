@@ -1,9 +1,5 @@
 // Game systems realisation
-use bevy::{
-    input::{common_conditions::input_just_pressed, mouse::MouseMotion},
-    prelude::*,
-    window::*,
-};
+use bevy::{input::mouse::MouseMotion, prelude::*, window::*};
 use doppely::*;
 use leafwing_input_manager::{action_state::*, input_map::InputMap, plugin::InputManagerSystem};
 use lightyear::input::client::*;
@@ -16,11 +12,6 @@ pub struct GamePlugin;
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
-            PostUpdate,
-            hide_cursor.run_if(input_just_pressed(KeyCode::Escape)),
-        );
-
-        app.add_systems(
             FixedPreUpdate,
             controller_input
                 .before(InputSystems::BufferClientInputs)
@@ -29,18 +20,13 @@ impl Plugin for GamePlugin {
     }
 }
 
-fn hide_cursor(mut cursor: Single<Mut<CursorOptions>>) {
-    let mode = match cursor.grab_mode {
-        CursorGrabMode::None => {
-            cursor.visible = false;
-            CursorGrabMode::Confined
-        }
-        _ => {
-            cursor.visible = true;
-            CursorGrabMode::None
-        }
-    };
-    cursor.grab_mode = mode;
+/// Сбрасывает накопленный поворот камеры. Вызывается при входе в игру и при
+/// её закрытии: иначе после Esc-меню камера «прыгает» на старый yaw/pitch.
+pub fn reset_look(world: &mut World) {
+    let mut camera = world.query_filtered::<&mut Transform, With<Camera3d>>();
+    for mut transform in camera.iter_mut(world) {
+        transform.rotation = Quat::IDENTITY;
+    }
 }
 
 fn controller_input(
@@ -54,10 +40,20 @@ fn controller_input(
     let Ok(mut action) = action.single_mut() else {
         return;
     };
-    let Ok(mut camera) = camera.single_mut() else {
+    let Ok(cursor) = cursor.single() else {
         return;
     };
-    let Ok(cursor) = cursor.single() else {
+
+    // Ввод копится только пока игра захватила курсор: в Esc-меню и вне игры
+    // камера не должна поворачиваться от движений мыши.
+    if cursor.grab_mode == CursorGrabMode::None {
+        *yaw = 0.0;
+        *pitch = 0.0;
+        action.reset_all();
+        return;
+    }
+
+    let Ok(mut camera) = camera.single_mut() else {
         return;
     };
 
@@ -66,12 +62,8 @@ fn controller_input(
         delta += event.delta;
     }
 
-    if !cursor.visible {
-        *yaw -= delta.x * SENSITIVITY;
-        *pitch -= delta.y * SENSITIVITY;
-
-        *pitch = pitch.clamp(-PITCH_LIMIT, PITCH_LIMIT);
-    }
+    *yaw -= delta.x * SENSITIVITY;
+    *pitch = (*pitch - delta.y * SENSITIVITY).clamp(-PITCH_LIMIT, PITCH_LIMIT);
 
     camera.rotation = Quat::from_rotation_x(*pitch);
     action.set_axis_pair(&PlayerAction::Rotation, Vec2::new(*pitch, *yaw));

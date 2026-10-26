@@ -14,8 +14,9 @@ pub struct ProtocolPlugin;
 
 impl Plugin for ProtocolPlugin {
     fn build(&self, app: &mut App) {
-        app.init_state::<AppState>();
-
+        // Клиент сам решает, когда он в меню или в игре (см. `client::states`),
+        // а серверу состояния не нужны — `init_state` был бы подпиской на чужую
+        // машину состояний. Поэтому общих `AppState` здесь больше нет.
         app.add_plugins(InputPlugin::<PlayerAction> {
             config: InputConfig {
                 rebroadcast_inputs: true,
@@ -129,14 +130,4 @@ impl Actionlike for PlayerAction {
             _ => InputControlKind::Button,
         }
     }
-}
-
-/// Server and client app state
-#[derive(States, Debug, Clone, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub enum AppState {
-    Loading,
-    #[default]
-    Lobby,
-    Editor,
-    InGame,
 }

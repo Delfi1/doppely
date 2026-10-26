@@ -1,31 +1,43 @@
-mod game;
-mod renderer;
+//! Клиент Doppely: главное меню со списком серверов, подключение, игра с HUD и
+//! Esc-меню.
+//!
+//! UI рисует React-приложение из `ui/`, а состояние и сеть живут здесь: экран
+//! считается из [`ClientState`] (см. [`states`]), данные ходят через
+//! [`ui`], серверы хранятся в [`crate::servers`].
 
-use bevy::ecs::{lifecycle::HookContext, world::DeferredWorld};
-use bevy_lunex::prelude::*;
-use leafwing_input_manager::{input_map::InputMap, user_input::VirtualDPad};
+mod game;
+mod hud;
+mod renderer;
+mod states;
+mod ui;
+
+use std::net::*;
+
+use bevy::{
+    diagnostic::FrameTimeDiagnosticsPlugin,
+    ecs::{lifecycle::HookContext, world::DeferredWorld},
+    input::keyboard::KeyCode,
+    prelude::*,
+};
+use bevy_react::prelude::*;
+use doppely::*;
+use leafwing_input_manager::{
+    input_map::InputMap, plugin::InputManagerPlugin, user_input::VirtualDPad,
+};
 use lightyear::{
     netcode::{NetcodeClient, client_plugin::NetcodeConfig},
     prelude::{client::ClientPlugins, *},
 };
 
-use doppely::*;
-use game::*;
-use renderer::*;
+use game::GamePlugin;
+use renderer::{RenderingPlugin, controller_camera};
+use states::{ClientState, SelectedServer, StartupWarning, StatesPlugin};
+use ui::register_bindings;
 
 const CLIENT_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), CLIENT_PORT);
 
-pub struct ClientPlugin;
-
-impl Plugin for ClientPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_plugins(GamePlugin);
-        app.add_observer(setup_controller);
-
-        app.add_plugins(RenderingPlugin);
-    }
-}
-
+/// Подключение к серверу: `ClientSettings` создаёт netcode-клиент, сокет и
+/// адреса. Сущность живёт ровно один сеанс связи (см. `states::connecting_clean`).
 #[derive(Component, Clone, Debug)]
 #[component(on_add = ClientSettings::on_add)]
 pub struct ClientSettings {
@@ -69,7 +81,7 @@ impl ClientSettings {
     }
 }
 
-fn setup_controller(trigger: On<Add, Controlled>, mut commands: Commands) {
+fn setup_controller(trigger: On<Add<Controlled>>, mut commands: Commands) {
     let entity = trigger.entity;
     let input_map = InputMap::new([
         (PlayerAction::Shift, KeyCode::ShiftLeft),
@@ -84,32 +96,109 @@ fn setup_controller(trigger: On<Add, Controlled>, mut commands: Commands) {
 }
 
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--export-bindings") {
+        export_bindings();
+        return;
+    }
+
     let mut app = App::new();
 
     let delta = Duration::from_secs_f64(1.0 / TIMESTEP_HZ);
-    app.add_plugins((FrameTimeDiagnosticsPlugin::new(64), DefaultPlugins));
+    app.add_plugins((
+        FrameTimeDiagnosticsPlugin::new(64),
+        DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Doppely".into(),
+                ..default()
+            }),
+            ..default()
+        }),
+    ));
     app.add_plugins(ClientPlugins {
         tick_duration: delta,
     });
 
     app.add_plugins(SharedPlugin);
+    load_servers(&mut app);
 
-    let conditioner = LinkConditionerConfig::average_condition().half();
-    // TODO:
-    let server_addr = SocketAddr::new(Ipv4Addr::new(192, 168, 3, 5).into(), SERVER_PORT);
-    app.world_mut().spawn(ClientSettings {
-        server_addr,
-        conditioner: Some(RecvLinkConditioner::new(conditioner.clone())),
-        shared: SHARED_SETTINGS,
-    });
+    app.add_plugins(ClientPlugin);
+    // Ввод игрока рассылается на сервер из `ActionState`, который наполняет
+    // именно этот плагин; без него игрок не двигается.
+    app.add_plugins(InputManagerPlugin::<PlayerAction>::default());
 
-    app.add_plugins((ClientPlugin, UiLunexPlugins));
-    app.add_systems(Startup, connect);
+    // `--connect <addr>` пропускает меню: удобно для отладки без кликов.
+    if let Some(server) = connect_arg() {
+        app.insert_resource(SelectedServer(server));
+        app.insert_state(ClientState::Connecting);
+    }
+
     app.run();
 }
 
-fn connect(mut commands: Commands, client: Single<Entity, With<Client>>) {
-    commands.trigger(Connect {
-        entity: client.into_inner(),
-    });
+fn export_bindings() {
+    let path = std::env::args()
+        .nth(2)
+        .unwrap_or_else(|| "ui/src/bevy.ts".into());
+
+    let mut app = App::new();
+    ReactPlugins::register_bindings(&mut app);
+    register_bindings(&mut app);
+    if let Err(error) = app.export_react_typescript(&path) {
+        eprintln!("не удалось записать {path}: {error}");
+        std::process::exit(1);
+    }
+}
+
+/// Читает `assets/servers.json` до старта UI: меню должно получить список в
+/// первом же кадре, иначе на мгновение показывается пустая панель.
+fn load_servers(app: &mut App) {
+    let path = crate::servers::ServersPath::resolve();
+    let (entries, warning) = path.load();
+    info!("Список серверов: {}", path.write_path().display());
+    if let Some(warning) = &warning {
+        warn!("{warning}");
+    }
+
+    app.insert_resource(crate::servers::ServerList::with_servers(entries))
+        .insert_resource(path)
+        .insert_resource(StartupWarning(warning));
+}
+
+fn connect_arg() -> Option<SocketAddr> {
+    let mut args = std::env::args().skip(1);
+    let flag = args.next()?;
+    if flag != "--connect" {
+        return None;
+    }
+    let value = args.next()?;
+    match crate::servers::parse_address(&value) {
+        Ok(addr) => addr.parse().ok(),
+        Err(error) => {
+            warn!("--connect {value}: {error}");
+            None
+        }
+    }
+}
+
+pub struct ClientPlugin;
+
+impl Plugin for ClientPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins(GamePlugin);
+        app.add_observer(setup_controller);
+
+        app.add_plugins(RenderingPlugin);
+        app.add_plugins(StatesPlugin);
+        app.add_plugins(hud::HudPlugin);
+
+        ReactPlugins::register_bindings(app);
+        register_bindings(app);
+        ui::register_handlers(app);
+
+        app.add_plugins(
+            ReactPlugins.set(
+                ReactUiPlugin::new("ui/dist/app.js").default_font("fonts/FiraSans-Regular.ttf"),
+            ),
+        );
+    }
 }

@@ -16,3 +16,36 @@ cargo run --release --bin server --features server cuda
 ```ps
 cargo run --release --bin client --features client
 ```
+
+### UI
+
+Интерфейс клиента — React-приложение в `ui/`, которое рисуется силами `bevy-react`.
+Перед первым запуском клиента его нужно собрать:
+
+```ps
+cd ui
+npm install
+npm run build
+```
+
+Клиент загружает `ui/dist/app.js` и `ui/dist/vendor.js` относительно рабочего каталога,
+поэтому `cargo run` надо выполнять из корня проекта.
+
+Для разработки UI удобен watch-режим (клиент подхватывает изменения без перезапуска):
+
+```ps
+cd ui
+npm run watch
+```
+
+Типизированный мост React → Rust (`ui/src/bevy.ts`) генерируется из Rust:
+
+```ps
+cd ui
+npm run bevy:generate
+```
+
+Список серверов хранится в `assets/servers.json` (Localhost вшит в код и всегда первый).
+Особенности запуска:
+
+- `client --connect 127.0.0.1` — пропустить меню и сразу подключиться (удобно для отладки).

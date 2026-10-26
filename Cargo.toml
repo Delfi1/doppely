@@ -1,6 +1,6 @@
 [package]
 name = "doppely"
-version = "0.0.5"
+version = "0.0.6"
 edition = "2024"
 
 [features]
@@ -20,7 +20,7 @@ client = [
     "bevy/bevy_window",
     "bevy/default_font",
     "lightyear/client",
-    "dep:bevy_lunex"
+    "dep:bevy-react"
 ]
 
 server = [
@@ -31,36 +31,28 @@ server = [
 
 [dependencies]
 serde = "1.0.229"
+serde_json = "1.0"
+ts-rs = "10.1.0"
 clap = { version = "4.6.7", features = ["derive"] }
 
 # Управление вводом для клиент-серверного взаимодействия
-leafwing-input-manager = "0.21.0"
-
-lightyear_frame_interpolation = {
-    git = "https://github.com/cBournhonesque/lightyear",
-    rev = "96ded4e",
-}
+leafwing-input-manager = "0.22.0"
 
 # Сетевая библиотека
-lightyear = {
-    git = "https://github.com/cBournhonesque/lightyear",
-    rev = "96ded4e",
-    features = ["avian3d", "interpolation", "prediction", "replication", "leafwing"]
-}
+lightyear = { version = "0.31.0", features = ["avian3d", "interpolation", "prediction", "replication", "leafwing"]}
+lightyear_frame_interpolation = "0.31.0"
 
 # Библиотека для нейронной сети
 dfdx = { version = "0.13.0", optional = true }
 strum = { version = "0.28.0", features = ["derive"], optional = true }
 rand = "0.10.3"
-bevy_lunex = {
-    git = "https://github.com/bytestring-net/bevy_lunex",
-    rev = "496b289",
-    optional = true
-}
+
+# Библиотека для UI (React в Bevy)
+bevy-react = { version = "0.8", optional = true }
 
 # Движок для обработки логики игры и рендеринга
 [dependencies.bevy]
-version = "0.19.1"
+version = "0.20"
 default-features = false
 features = [
     "std",
@@ -71,10 +63,9 @@ features = [
 
 # Движок физики в 3d
 [dependencies.avian3d]
-version = "0.7"
+version = "0.8.0"
 features = [
   "3d",
-  "f32",
   "parry-f32",
   "parallel",
   "serialize",

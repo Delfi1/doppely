@@ -134,12 +134,12 @@ fn start(mut commands: Commands, server: Single<Entity, With<Server>>) {
     });
 }
 
-fn handle_new(trigger: On<Add, LinkOf>, mut commands: Commands) {
+fn handle_new(trigger: On<Add<LinkOf>>, mut commands: Commands) {
     commands.entity(trigger.entity).insert(ReplicationSender);
 }
 
 fn on_connected(
-    trigger: On<Add, Connected>,
+    trigger: On<Add<Connected>>,
     query: Query<&RemoteId, With<ClientOf>>,
     mut commands: Commands,
 ) {

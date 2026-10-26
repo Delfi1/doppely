@@ -26,6 +26,18 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build UI
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build:prod
+
       - name: Build
         run: |
           cargo build --bin client --features client --profile production --target x86_64-pc-windows-msvc
@@ -38,6 +50,9 @@ jobs:
           cp target/x86_64-pc-windows-msvc/production/server.exe out/
           mkdir assets -ea 0
           cp -r assets out/
+          # Клиент загружает React-бандл из ui/dist относительно exe.
+          mkdir out/ui -ea 0
+          cp -r ui/dist out/ui/
 
       - name: Package as a zip
         run: |
