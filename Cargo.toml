@@ -19,6 +19,7 @@ client = [
     "bevy/bevy_winit",
     "bevy/bevy_window",
     "bevy/default_font",
+    "bevy/system_font_discovery",
     "lightyear/client",
     "dep:bevy-react"
 ]

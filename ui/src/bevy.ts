@@ -26,11 +26,7 @@ export type ChromaticAberrationParams = { offset: number | string, angle: number
  */
 rotation: number, };
 export type ConnectRequest = { id: number, };
-export type ConnectionStatusChanged = { 
-/**
- * `"connecting" | "error"`.
- */
-status: string, server: string, message: string, };
+export type ConnectionStatusChanged = { status: string, server: string, message: string, };
 export type ContrastParams = { amount: number, };
 export type CrossfadeParams = { 
 /**
@@ -49,6 +45,8 @@ softness: number,
  * Re-rolls the noise pattern (domain offset).
  */
 seed: number, };
+export type EditorChanged = { scene: string, scenes: Array<string>, message: string, ok: boolean, canUndo: boolean, canRedo: boolean, };
+export type EditorPicker = { x: number, y: number, position: [number, number, number], };
 export type GamepadAxisChange = { gamepad: number, axis: GamepadAxisName, value: number, };
 export type GamepadAxisName = "leftStickX" | "leftStickY" | "leftZ" | "rightStickX" | "rightStickY" | "rightZ" | { "other": number };
 export type GamepadButtonChange = { gamepad: number, button: GamepadButtonName, 
@@ -108,19 +106,7 @@ export type GamepadStopRumble = { gamepad: number, };
 export type GradientMapParams = { angle: number | string, stops: Array<GradientMapStop>, amount: number, };
 export type GradientMapStop = { color: string, position?: number, };
 export type GrayscaleParams = { amount: number, };
-export type HudUpdated = { 
-/**
- * Адрес сервера, к которому подключены.
- */
-server: string, 
-/**
- * Сетевой тик (локальный таймлайн).
- */
-tick: number, fps: number, 
-/**
- * Позиция локального игрока; `None`, пока сервер её не реплицировал.
- */
-position: [number, number, number] | null, };
+export type HudUpdated = { server: string, tick: number, fps: number, position: [number, number, number] | null, };
 export type HueRotateParams = { angle: number | string, };
 export type InvertParams = { amount: number, };
 export type KeyDown = KeyboardEventData;
@@ -150,6 +136,10 @@ repeat: boolean, ctrlKey: boolean, shiftKey: boolean, altKey: boolean,
 metaKey: boolean, };
 export type LeaveRequest = Record<string, never>;
 export type LinearWipeParams = { angle: number | string, softness: number | string, };
+export type LoadSceneRequest = { name: string, };
+export type LobbyChanged = { players: number, maxPlayers: number, };
+export type MoveObjectRequest = { id: number, position: [number, number, number], };
+export type ObjectType = "Cuboid" | "Sphere" | "Capsule" | "Cylinder" | "Cone" | "Spawnpoint";
 export type OutlineParams = { width: number | string, color: string, softness: number | string, };
 export type PauseRequest = Record<string, never>;
 export type PinchParams = { 
@@ -214,28 +204,32 @@ squaresMin: [number, number],
  */
 steps: number, };
 export type QuitRequest = Record<string, never>;
+export type RedoRequest = Record<string, never>;
+export type RefreshScenesRequest = Record<string, never>;
+export type RemoveObjectRequest = { id: number, };
+export type RemoveObjectsRequest = { ids: Array<number>, };
 export type RemoveServerRequest = { id: number, };
 export type Resize = WindowSize;
 export type ResumeRequest = Record<string, never>;
 export type SaturateParams = { amount: number, };
-export type ScreenChanged = { 
-/**
- * `UiScreen::name`: `"menu" | "connecting" | "game" | "paused" | "error"`.
- */
-screen: string, };
+export type SaveSceneRequest = { name: string, };
+export type SceneChanged = { objects: Array<SceneObjectWire>, selected: Array<number>, };
+export type SceneComponent = "dynamic" | "glow" | { "light": { intensity: number, radius: number, } } | { "friction": { coefficient: number, } };
+export type SceneObjectWire = { id: number, name: string, kind: string, position: [number, number, number], rotation: [number, number, number], size: [number, number, number], components: Array<SceneComponent>, };
+export type ScreenChanged = { screen: string, };
+export type SelectObjectRequest = { id: number, };
 export type SepiaParams = { amount: number, };
-export type ServerWire = { id: number, name: string, address: string, 
-/**
- * Localhost: неудаляемый и всегда первый.
- */
-local: boolean, };
+export type ServerStatusChanged = { statuses: Array<ServerStatusWire>, };
+export type ServerStatusWire = { address: string, online: boolean, players: number, maxPlayers: number, mode: string, };
+export type ServerWire = { id: number, name: string, address: string, local: boolean, };
 export type ServersChanged = { servers: Array<ServerWire>, };
+export type SetComponentsRequest = { id: number, components: Array<SceneComponent>, };
+export type SetTransformRequest = { id: number, position: [number, number, number], rotation: [number, number, number], size: [number, number, number], };
 export type ShadowParams = { color: string, offsetX: number | string, offsetY: number | string, spread: number | string, };
-export type ShowToast = { message: string, 
-/**
- * `"error" | "info"`.
- */
-kind: string, };
+export type ShowToast = { message: string, kind: string, };
+export type SpawnObjectRequest = { kind: ObjectType, position: [number, number, number], };
+export type StartGameRequest = Record<string, never>;
+export type UndoRequest = Record<string, never>;
 export type WindowSize = { width: number, height: number, };
 
 /** Every `emit` name and the payload type it carries. */
@@ -245,10 +239,23 @@ export interface ReactMessages {
   "gamepad.rumble": GamepadRumble;
   "gamepad.stopRumble": GamepadStopRumble;
   leave: LeaveRequest;
+  loadScene: LoadSceneRequest;
+  moveObject: MoveObjectRequest;
   pause: PauseRequest;
   quit: QuitRequest;
+  redo: RedoRequest;
+  refreshScenes: RefreshScenesRequest;
+  removeObject: RemoveObjectRequest;
+  removeObjects: RemoveObjectsRequest;
   removeServer: RemoveServerRequest;
   resume: ResumeRequest;
+  saveScene: SaveSceneRequest;
+  selectObject: SelectObjectRequest;
+  setComponents: SetComponentsRequest;
+  setTransform: SetTransformRequest;
+  spawnObject: SpawnObjectRequest;
+  startGame: StartGameRequest;
+  undo: UndoRequest;
 }
 
 /** Every `request` name and its request/response types. */
@@ -266,9 +273,14 @@ export interface ReactEvents {
   keyUp: KeyUp;
   resize: Resize;
   "ui.connection": ConnectionStatusChanged;
+  "ui.editor": EditorChanged;
   "ui.hud": HudUpdated;
+  "ui.lobby": LobbyChanged;
+  "ui.picker": EditorPicker;
+  "ui.scene": SceneChanged;
   "ui.screen": ScreenChanged;
   "ui.servers": ServersChanged;
+  "ui.status": ServerStatusChanged;
   "ui.toast": ShowToast;
 }
 
@@ -520,10 +532,23 @@ export const bevy = {
     stopRumble(value: GamepadStopRumble): void { emit("gamepad.stopRumble", value); },
   },
   leave(value: LeaveRequest): void { emit("leave", value); },
+  loadScene(value: LoadSceneRequest): void { emit("loadScene", value); },
+  moveObject(value: MoveObjectRequest): void { emit("moveObject", value); },
   pause(value: PauseRequest): void { emit("pause", value); },
   quit(value: QuitRequest): void { emit("quit", value); },
+  redo(value: RedoRequest): void { emit("redo", value); },
+  refreshScenes(value: RefreshScenesRequest): void { emit("refreshScenes", value); },
+  removeObject(value: RemoveObjectRequest): void { emit("removeObject", value); },
+  removeObjects(value: RemoveObjectsRequest): void { emit("removeObjects", value); },
   removeServer(value: RemoveServerRequest): void { emit("removeServer", value); },
   resume(value: ResumeRequest): void { emit("resume", value); },
+  saveScene(value: SaveSceneRequest): void { emit("saveScene", value); },
+  selectObject(value: SelectObjectRequest): void { emit("selectObject", value); },
+  setComponents(value: SetComponentsRequest): void { emit("setComponents", value); },
+  setTransform(value: SetTransformRequest): void { emit("setTransform", value); },
+  spawnObject(value: SpawnObjectRequest): void { emit("spawnObject", value); },
+  startGame(value: StartGameRequest): void { emit("startGame", value); },
+  undo(value: UndoRequest): void { emit("undo", value); },
   window: {
     size(): Promise<WindowSize> { return request("window.size", null); },
   },

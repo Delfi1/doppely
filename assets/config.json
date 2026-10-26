@@ -1,5 +1,7 @@
 {
+  "bind": "0.0.0.0",
   "host": "127.0.0.1",
-  "port": "5000",
-  "password": ""
+  "port": 5000,
+  "password": "",
+  "protocolId": 1
 }

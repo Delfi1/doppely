@@ -1,4 +1,3 @@
-// Game systems realisation
 use bevy::{input::mouse::MouseMotion, prelude::*, window::*};
 use doppely::*;
 use leafwing_input_manager::{action_state::*, input_map::InputMap, plugin::InputManagerSystem};
@@ -11,7 +10,7 @@ pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
+        app.init_resource::<CameraLook>().add_systems(
             FixedPreUpdate,
             controller_input
                 .before(InputSystems::BufferClientInputs)
@@ -20,22 +19,21 @@ impl Plugin for GamePlugin {
     }
 }
 
-/// Сбрасывает накопленный поворот камеры. Вызывается при входе в игру и при
-/// её закрытии: иначе после Esc-меню камера «прыгает» на старый yaw/pitch.
+#[derive(Resource, Default)]
+pub struct CameraLook {
+    pub yaw: f32,
+    pub pitch: f32,
+}
+
 pub fn reset_look(world: &mut World) {
-    let mut camera = world.query_filtered::<&mut Transform, With<Camera3d>>();
-    for mut transform in camera.iter_mut(world) {
-        transform.rotation = Quat::IDENTITY;
-    }
+    *world.resource_mut::<CameraLook>() = CameraLook::default();
 }
 
 fn controller_input(
     mut action: Query<&mut ActionState<PlayerAction>, With<InputMap<PlayerAction>>>,
-    mut camera: Query<Mut<Transform>, With<Camera3d>>,
     mut mouse: MessageReader<MouseMotion>,
     cursor: Query<Ref<CursorOptions>>,
-    mut yaw: Local<f32>,
-    mut pitch: Local<f32>,
+    mut look: ResMut<CameraLook>,
 ) {
     let Ok(mut action) = action.single_mut() else {
         return;
@@ -44,27 +42,19 @@ fn controller_input(
         return;
     };
 
-    // Ввод копится только пока игра захватила курсор: в Esc-меню и вне игры
-    // камера не должна поворачиваться от движений мыши.
     if cursor.grab_mode == CursorGrabMode::None {
-        *yaw = 0.0;
-        *pitch = 0.0;
         action.reset_all();
+        action.set_axis_pair(&PlayerAction::Rotation, Vec2::new(look.pitch, look.yaw));
         return;
     }
-
-    let Ok(mut camera) = camera.single_mut() else {
-        return;
-    };
 
     let mut delta = Vec2::ZERO;
     for event in mouse.read() {
         delta += event.delta;
     }
 
-    *yaw -= delta.x * SENSITIVITY;
-    *pitch = (*pitch - delta.y * SENSITIVITY).clamp(-PITCH_LIMIT, PITCH_LIMIT);
+    look.yaw -= delta.x * SENSITIVITY;
+    look.pitch = (look.pitch - delta.y * SENSITIVITY).clamp(-PITCH_LIMIT, PITCH_LIMIT);
 
-    camera.rotation = Quat::from_rotation_x(*pitch);
-    action.set_axis_pair(&PlayerAction::Rotation, Vec2::new(*pitch, *yaw));
+    action.set_axis_pair(&PlayerAction::Rotation, Vec2::new(look.pitch, look.yaw));
 }

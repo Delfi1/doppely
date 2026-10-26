@@ -1,5 +1,8 @@
+pub mod config;
 pub mod protocol;
+pub mod scene;
 pub mod servers;
+pub mod status;
 
 use leafwing_input_manager::action_state::ActionState;
 use lightyear::avian3d::plugin::*;
@@ -10,13 +13,10 @@ pub use std::net::*;
 pub use std::time::*;
 
 pub const TIMESTEP_HZ: f64 = 64.0;
-pub const SERVER_PORT: u16 = 5000;
+
+pub const MAX_PLAYERS: u8 = 8;
 
 pub const CLIENT_PORT: u16 = 4000;
-pub const SHARED_SETTINGS: SharedSettings = SharedSettings {
-    protocol_id: 1,
-    private_key: [0; 32],
-};
 
 const PLAYER_SPEED: f32 = 3.0;
 const SHIFT_MULTIPLIER: f32 = 1.17;

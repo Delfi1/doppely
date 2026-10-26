@@ -65,7 +65,6 @@ impl Plugin for TrainPlugin {
     }
 }
 
-// todo: Create data batches for model training
 pub fn take_batch(
     time: Res<LocalTimeline>,
     npc: Res<Npc>,

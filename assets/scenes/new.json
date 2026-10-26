@@ -1,0 +1,64 @@
+[
+  {
+    "id": 0,
+    "kind": "Cuboid",
+    "size": [
+      10.0,
+      0.2,
+      10.0
+    ],
+    "position": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "name": "Floor",
+    "components": [
+      {
+        "friction": {
+          "coefficient": 0.8
+        }
+      }
+    ]
+  },
+  {
+    "id": 1,
+    "kind": "Cuboid",
+    "size": [
+      0.5,
+      0.5,
+      0.5
+    ],
+    "position": [
+      1.0,
+      2.0,
+      0.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "name": "Crate",
+    "components": [
+      "dynamic",
+      "glow",
+      {
+        "light": {
+          "intensity": 100000.0,
+          "radius": 10.0
+        }
+      },
+      {
+        "friction": {
+          "coefficient": 0.8
+        }
+      }
+    ]
+  }
+]

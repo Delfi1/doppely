@@ -1,12 +1,7 @@
-//! Клиент Doppely: главное меню со списком серверов, подключение, игра с HUD и
-//! Esc-меню.
-//!
-//! UI рисует React-приложение из `ui/`, а состояние и сеть живут здесь: экран
-//! считается из [`ClientState`] (см. [`states`]), данные ходят через
-//! [`ui`], серверы хранятся в [`crate::servers`].
-
+mod editor;
 mod game;
 mod hud;
+mod online;
 mod renderer;
 mod states;
 mod ui;
@@ -20,6 +15,8 @@ use bevy::{
     prelude::*,
 };
 use bevy_react::prelude::*;
+use doppely::config::ServerConfig;
+use doppely::servers::ServerList;
 use doppely::*;
 use leafwing_input_manager::{
     input_map::InputMap, plugin::InputManagerPlugin, user_input::VirtualDPad,
@@ -30,14 +27,12 @@ use lightyear::{
 };
 
 use game::GamePlugin;
-use renderer::{RenderingPlugin, controller_camera};
+use renderer::RenderingPlugin;
 use states::{ClientState, SelectedServer, StartupWarning, StatesPlugin};
 use ui::register_bindings;
 
 const CLIENT_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), CLIENT_PORT);
 
-/// Подключение к серверу: `ClientSettings` создаёт netcode-клиент, сокет и
-/// адреса. Сущность живёт ровно один сеанс связи (см. `states::connecting_clean`).
 #[derive(Component, Clone, Debug)]
 #[component(on_add = ClientSettings::on_add)]
 pub struct ClientSettings {
@@ -91,8 +86,7 @@ fn setup_controller(trigger: On<Add<Controlled>>, mut commands: Commands) {
 
     commands
         .entity(entity)
-        .insert((input_map, InheritedVisibility::VISIBLE))
-        .with_child(controller_camera());
+        .insert((input_map, InheritedVisibility::VISIBLE));
 }
 
 fn main() {
@@ -122,12 +116,9 @@ fn main() {
     load_servers(&mut app);
 
     app.add_plugins(ClientPlugin);
-    // Ввод игрока рассылается на сервер из `ActionState`, который наполняет
-    // именно этот плагин; без него игрок не двигается.
     app.add_plugins(InputManagerPlugin::<PlayerAction>::default());
 
-    // `--connect <addr>` пропускает меню: удобно для отладки без кликов.
-    if let Some(server) = connect_arg() {
+    if let Some(server) = connect_arg(app.world().resource::<ServerConfig>()) {
         app.insert_resource(SelectedServer(server));
         app.insert_state(ClientState::Connecting);
     }
@@ -149,29 +140,40 @@ fn export_bindings() {
     }
 }
 
-/// Читает `assets/servers.json` до старта UI: меню должно получить список в
-/// первом же кадре, иначе на мгновение показывается пустая панель.
 fn load_servers(app: &mut App) {
+    let (config, config_path, config_warning) = ServerConfig::read();
+    info!("Конфиг: {}", config_path.display());
+
     let path = crate::servers::ServersPath::resolve();
-    let (entries, warning) = path.load();
-    info!("Список серверов: {}", path.write_path().display());
+    let (entries, servers_warning) = path.load(&config);
+    info!(
+        "Список серверов: {} (сохранение: {})",
+        path.active_path().display(),
+        path.write_path().display()
+    );
+
+    let warning = servers_warning.or(config_warning);
     if let Some(warning) = &warning {
         warn!("{warning}");
     }
 
-    app.insert_resource(crate::servers::ServerList::with_servers(entries))
+    let local = config.local_addr();
+
+    app.insert_resource(SelectedServer(local))
+        .insert_resource(ServerList::with_servers(entries, local))
+        .insert_resource(config)
         .insert_resource(path)
         .insert_resource(StartupWarning(warning));
 }
 
-fn connect_arg() -> Option<SocketAddr> {
+fn connect_arg(config: &ServerConfig) -> Option<SocketAddr> {
     let mut args = std::env::args().skip(1);
     let flag = args.next()?;
     if flag != "--connect" {
         return None;
     }
     let value = args.next()?;
-    match crate::servers::parse_address(&value) {
+    match crate::servers::parse_address(&value, config) {
         Ok(addr) => addr.parse().ok(),
         Err(error) => {
             warn!("--connect {value}: {error}");
@@ -190,6 +192,10 @@ impl Plugin for ClientPlugin {
         app.add_plugins(RenderingPlugin);
         app.add_plugins(StatesPlugin);
         app.add_plugins(hud::HudPlugin);
+        editor::plugin(app);
+
+        app.insert_resource(online::ServerStatuses::start());
+        app.add_systems(Update, (online::sync_targets, online::drain_results));
 
         ReactPlugins::register_bindings(app);
         register_bindings(app);

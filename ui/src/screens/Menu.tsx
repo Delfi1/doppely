@@ -1,46 +1,21 @@
-import { useMemo, useState } from "react";
-import { bevy, type ServerWire } from "../bevy";
-import { Badge, Button, TextField, Title, useEnter } from "../components";
-import { column, label, panel, row, theme, transition } from "../theme";
+import { useCallback, useState } from "react";
+import { bevy, type ServerStatusWire, type ServerWire } from "../bevy";
+import { Button, TextField, Title, useEnter, useEscape } from "../components";
+import { column, font, hint, overlay, panel, row, theme, transition } from "../theme";
 
 interface MenuProps {
   servers: ServerWire[];
-  /** Адрес, к которому шло последнее подключение (для отметки «последний»). */
+  statuses: ServerStatusWire[];
   lastServer: string | null;
-  busy: boolean;
 }
 
-/**
- * Главное меню: список серверов (localhost всегда первый и не удаляется) и
- * форма добавления. Источник истины списка — Rust, React лишь рисует его и
- * отправляет намерения.
- */
-export function Menu({ servers, lastServer, busy }: MenuProps) {
-  const [name, setName] = useState("");
-  const [address, setAddress] = useState("");
-  const [open, setOpen] = useState(servers.length <= 1);
+export function Menu({ servers, statuses, lastServer }: MenuProps) {
+  const [adding, setAdding] = useState(false);
 
-  const submit = () => {
-    if (address.trim().length === 0) return;
-    bevy.addServer({ name: name.trim(), address: address.trim() });
-    setName("");
-    setAddress("");
-    setOpen(true);
-  };
-  useEnter(submit);
-
-  const primary = useMemo(
-    () => servers.find((s) => s.address === lastServer) ?? servers[0],
-    [servers, lastServer],
-  );
-
-  if (!primary) {
-    // Список приходит из Rust: до первого `ui.servers` рисовать нечего.
+  if (servers.length === 0) {
     return (
       <node style={{ flexGrow: 1, justifyContent: "center", alignItems: "center" }}>
-        <text style={{ color: theme.muted, fontSize: 14 }}>
-          Загрузка списка серверов…
-        </text>
+        <text style={{ color: theme.muted, fontSize: 13 }}>Загрузка…</text>
       </node>
     );
   }
@@ -49,212 +24,173 @@ export function Menu({ servers, lastServer, busy }: MenuProps) {
     <node
       style={{
         flexGrow: 1,
-        flexDirection: "row",
-        alignItems: "center",
+        width: "100%",
+        flexDirection: "column",
         justifyContent: "center",
-        padding: 32,
-        gap: 20,
+        alignItems: "center",
       }}
     >
-      <node style={panel({ width: 470, flexDirection: "column", gap: 14 })}>
-        <Title subtitle="Асимметричная игра про станцию и её доппельгангера">
-          Doppely
-        </Title>
+      <node style={{ width: 380, flexDirection: "column", gap: 16 }}>
+        <Title>Doppely</Title>
 
-        <node style={{ ...row, gap: 8 }}>
-          <Button
-            variant="primary"
-            disabled={busy}
-            onClick={() => bevy.connect({ id: primary.id })}
-          >
-            Играть · {primary.name}
-          </Button>
-          <text style={{ color: theme.faint, fontSize: 12 }}>{primary.address}</text>
+        <node style={column(4)}>
+          {servers.map((server) => (
+            <ServerRow
+              key={String(server.id)}
+              server={server}
+              active={server.address === lastServer}
+              status={statuses.find((s) => s.address === server.address)}
+            />
+          ))}
         </node>
 
-        <Divider />
+        <text style={hint}>Нажмите на сервер, чтобы подключиться.</text>
 
-        <node style={column(8)}>
-          <node style={{ ...row, justifyContent: "spaceBetween" }}>
-            <text style={label}>СЕРВЕРЫ</text>
-            <text style={{ color: theme.faint, fontSize: 11 }}>
-              {servers.length} в списке
-            </text>
-          </node>
+        <Button variant="ghost" onClick={() => setAdding(true)}>
+          + Добавить сервер
+        </Button>
 
-          <node
-            style={{
-              flexDirection: "column",
-              gap: 6,
-              overflowY: servers.length > 6 ? "scroll" : "visible",
-              maxHeight: 260,
-            }}
-          >
-            {servers.map((server) => (
-              <ServerRow
-                key={String(server.id)}
-                server={server}
-                last={server.address === lastServer}
-                busy={busy}
-              />
-            ))}
-          </node>
-        </node>
-
-        <Divider />
-
-        {open ? (
-          <node style={column(10)}>
-            <node style={{ ...row, gap: 10, alignItems: "flexEnd" }}>
-              <TextField
-                value={name}
-                onChange={setName}
-                label="Название"
-                placeholder="Домашний"
-                style={{ width: 140 }}
-                maxLength={24}
-                onSubmit={submit}
-              />
-              <TextField
-                value={address}
-                onChange={setAddress}
-                label="Адрес"
-                placeholder="192.168.3.5:5000"
-                style={{ flexGrow: 1 }}
-                maxLength={64}
-                onSubmit={submit}
-              />
-              <Button
-                variant="ghost"
-                onClick={submit}
-                disabled={address.trim().length === 0}
-                style={{ margin: { bottom: 1 } }}
-              >
-                Добавить
-              </Button>
-            </node>
-            <text style={{ color: theme.faint, fontSize: 11 }}>
-              Порт можно не указывать — подставится 5000.
-            </text>
-          </node>
-        ) : (
-          <Button variant="ghost" onClick={() => setOpen(true)}>
-            + Добавить сервер
-          </Button>
-        )}
-      </node>
-
-      <node
-        style={panel({
-          width: 256,
-          alignSelf: "stretch",
-          flexDirection: "column",
-          justifyContent: "spaceBetween",
-          gap: 12,
-        })}
-      >
-        <node style={column(10)}>
-          <text style={label}>УПРАВЛЕНИЕ</text>
-          <Hint k="WASD" v="движение" />
-          <Hint k="Shift" v="бег" />
-          <Hint k="F" v="применить к объекту" />
-          <Hint k="Esc" v="меню паузы" />
-        </node>
-
-        <node style={column(8)}>
-          <text style={{ color: theme.faint, fontSize: 11, lineHeight: 1.4 }}>
-            Серверы хранятся в assets/servers.json. Localhost присутствует всегда.
-          </text>
+        <node style={{ ...row, justifyContent: "flexEnd" }}>
           <Button variant="danger" onClick={() => bevy.quit({})}>
-            Выйти из игры
+            Выйти
           </Button>
         </node>
       </node>
-    </node>
-  );
-}
 
-function Divider() {
-  return <node style={{ height: 1, backgroundColor: theme.border }} />;
-}
-
-function Hint({ k, v }: { k: string; v: string }) {
-  return (
-    <node style={{ ...row, gap: 8 }}>
-      <node
-        style={{
-          minWidth: 44,
-          padding: { horizontal: 6, vertical: 2 },
-          borderRadius: 6,
-          border: 1,
-          borderColor: theme.border,
-          backgroundColor: theme.bg,
-          justifyContent: "center",
-        }}
-      >
-        <text style={{ color: theme.text, fontSize: 11, textAlign: "center" }}>{k}</text>
-      </node>
-      <text style={{ color: theme.muted, fontSize: 12 }}>{v}</text>
+      {adding ? <AddServerDialog onClose={() => setAdding(false)} /> : null}
     </node>
   );
 }
 
 function ServerRow({
   server,
-  last,
-  busy,
+  active,
+  status,
 }: {
   server: ServerWire;
-  last: boolean;
-  busy: boolean;
+  active: boolean;
+  status?: ServerStatusWire;
 }) {
+  const online = status?.online ?? false;
+
   return (
     <node
       style={{
         ...row,
         justifyContent: "spaceBetween",
-        padding: { horizontal: 12, vertical: 9 },
-        borderRadius: 9,
+        borderRadius: 10,
         border: 1,
-        borderColor: last ? theme.accentDim : theme.border,
-        backgroundColor: last ? "#242942" : theme.bg,
+        borderColor: active ? theme.accentDim : theme.border,
+        backgroundColor: active ? theme.surface : "transparent",
         transition,
       }}
-      hoverStyle={{ borderColor: theme.accent }}
     >
-      <node style={{ ...row, gap: 8, flexShrink: 1 }}>
-        <node
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: 999,
-            backgroundColor: last ? theme.ok : theme.faint,
-          }}
-        />
-        <node style={{ flexDirection: "column", gap: 1 }}>
-          <text style={{ color: theme.text, fontSize: 14 }}>{server.name}</text>
-          <text style={{ color: theme.faint, fontSize: 11 }}>{server.address}</text>
-        </node>
-        {server.local ? <Badge color={theme.warn}>local</Badge> : null}
+      <node
+        onClick={() => bevy.connect({ id: server.id })}
+        style={{
+          flexGrow: 1,
+          flexShrink: 1,
+          flexDirection: "column",
+          gap: 1,
+          padding: { horizontal: 12, vertical: 9 },
+          borderRadius: 10,
+          cursor: "pointer",
+          transition,
+        }}
+        hoverStyle={{ backgroundColor: theme.surfaceHi }}
+      >
+        <text style={{ color: theme.text, fontSize: 13 }}>{server.name}</text>
+        <text style={{ color: theme.faint, fontSize: 11, fontFamily: font.mono }}>
+          {server.address}
+        </text>
       </node>
 
-      <node style={{ ...row, gap: 6 }}>
-        <Button
-          variant={last ? "primary" : "ghost"}
-          disabled={busy}
-          onClick={() => bevy.connect({ id: server.id })}
-          style={{ padding: { horizontal: 12, vertical: 6 } }}
+      <node style={{ ...row, gap: 8, margin: { right: 6 } }}>
+        <node
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: 999,
+            backgroundColor: online ? theme.ok : theme.faint,
+          }}
+        />
+        <text
+          style={{
+            color: online ? theme.muted : theme.faint,
+            fontSize: 11,
+            fontFamily: font.mono,
+          }}
         >
-          {last ? "Играть" : "Подключиться"}
-        </Button>
+          {status ? statusText(status) : "—"}
+        </text>
+      </node>
+
+      {server.local ? null : (
         <Button
           variant="danger"
-          disabled={server.local || busy}
+          fontSize={16}
           onClick={() => bevy.removeServer({ id: server.id })}
-          style={{ padding: { horizontal: 10, vertical: 6 } }}
+          style={{
+            padding: { horizontal: 9, vertical: 2 },
+            borderColor: "transparent",
+            margin: { right: 6 },
+          }}
         >
-          ✕
+          ×
         </Button>
+      )}
+    </node>
+  );
+}
+
+function statusText(status: ServerStatusWire): string {
+  if (!status.online) return "оффлайн";
+  const players = `${status.players}/${status.maxPlayers}`;
+  if (status.mode === "game") return `${players} · в игре`;
+  if (status.mode === "edit") return `${players} · редактор`;
+  return players;
+}
+
+function AddServerDialog({ onClose }: { onClose: () => void }) {
+  const [name, setName] = useState("");
+  const [address, setAddress] = useState("");
+
+  const submit = useCallback(() => {
+    const value = address.trim();
+    if (value.length === 0) return;
+    bevy.addServer({ name: name.trim(), address: value });
+    onClose();
+  }, [address, name, onClose]);
+
+  useEnter(submit);
+  useEscape(onClose);
+
+  return (
+    <node style={overlay()}>
+      <node style={panel({ width: 340, flexDirection: "column", gap: 12 })}>
+        <text style={{ color: theme.text, fontSize: 15, fontWeight: "semibold" }}>
+          Новый сервер
+        </text>
+
+        <TextField label="Название" value={name} onChange={setName} maxLength={24} />
+        <TextField
+          label="Адрес"
+          value={address}
+          onChange={setAddress}
+          maxLength={64}
+          autoFocus
+        />
+
+        <text style={hint}>Порт можно не указывать — подставится стандартный.</text>
+
+        <node style={{ ...row, justifyContent: "flexEnd", margin: { top: 2 } }}>
+          <Button variant="ghost" onClick={onClose}>
+            Отмена
+          </Button>
+          <Button variant="primary" onClick={submit} disabled={address.trim().length === 0}>
+            Добавить
+          </Button>
+        </node>
       </node>
     </node>
   );

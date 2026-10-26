@@ -1,19 +1,25 @@
 import { useCallback, useEffect, useState } from "react";
-import { BevyStyle } from "bevy-react";
+import type { BevyStyle } from "bevy-react";
 import {
   bevy,
   type ConnectionStatusChanged,
+  type EditorChanged,
   type HudUpdated,
+  type LobbyChanged,
+  type SceneChanged,
+  type ServerStatusWire,
   type ServerWire,
 } from "./bevy";
 import { Menu } from "./screens/Menu";
+import { LobbyScreen } from "./screens/Lobby";
+import { EditorScreen } from "./screens/Editor";
+import { Inspector } from "./screens/Inspector";
 import { Hud } from "./screens/Hud";
 import { Pause } from "./screens/Pause";
 import { ConnectionScreen } from "./screens/Connection";
 import { theme, transition } from "./theme";
 
-/** Экран, которым управляет клиент (совпадает с `UiScreen::name` в Rust). */
-type Screen = "menu" | "connecting" | "game" | "paused" | "error";
+type Screen = "menu" | "connecting" | "lobby" | "edit" | "game" | "paused" | "error";
 
 interface Toast {
   id: number;
@@ -21,17 +27,14 @@ interface Toast {
   kind: string;
 }
 
-/**
- * Корень UI: одно React-дерево, экран выбирается по состоянию клиента.
- *
- * Клиент — единственный источник истины: он присылает `ui.screen`, `ui.servers`,
- * `ui.connection`, `ui.hud`, а UI отправляет намерения (`connect`, `addServer`, …).
- * Поэтому UI не может «разъехаться» с реальным состоянием игры.
- */
 export function App() {
   const [screen, setScreen] = useState<Screen>("menu");
   const [servers, setServers] = useState<ServerWire[]>([]);
+  const [statuses, setStatuses] = useState<ServerStatusWire[]>([]);
   const [connection, setConnection] = useState<ConnectionStatusChanged | null>(null);
+  const [lobby, setLobby] = useState<LobbyChanged | null>(null);
+  const [editor, setEditor] = useState<EditorChanged | null>(null);
+  const [scene, setScene] = useState<SceneChanged | null>(null);
   const [hud, setHud] = useState<HudUpdated | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
 
@@ -39,7 +42,11 @@ export function App() {
     const stops = [
       bevy.on("ui.screen", (e) => setScreen(e.screen as Screen)),
       bevy.on("ui.servers", (e) => setServers(e.servers)),
+      bevy.on("ui.status", (e) => setStatuses(e.statuses)),
       bevy.on("ui.connection", (e) => setConnection(e)),
+      bevy.on("ui.lobby", (e) => setLobby(e)),
+      bevy.on("ui.editor", (e) => setEditor(e)),
+      bevy.on("ui.scene", (e) => setScene(e)),
       bevy.on("ui.hud", (e) => setHud(e)),
       bevy.on("ui.toast", (e) => {
         if (e.message.length === 0) return;
@@ -49,32 +56,26 @@ export function App() {
     return () => stops.forEach((stop) => stop());
   }, []);
 
-  // Тосты сами гаснут: держим в UI-состоянии, чтобы не зависеть от Rust-таймеров.
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 4200);
     return () => clearTimeout(timer);
   }, [toast]);
 
-  const busy = screen === "connecting";
-
   const dismiss = useCallback(() => setToast(null), []);
 
   return (
     <node style={rootStyle(screen)}>
       {screen === "menu" ? (
-        <Menu
-          servers={servers}
-          lastServer={connection?.server ?? null}
-          busy={busy}
-        />
+        <Menu servers={servers} statuses={statuses} lastServer={connection?.server ?? null} />
       ) : null}
 
-      {screen === "connecting" ? (
-        <ConnectionScreen status={connection} error={false} />
-      ) : null}
-
+      {screen === "connecting" ? <ConnectionScreen status={connection} error={false} /> : null}
       {screen === "error" ? <ConnectionScreen status={connection} error /> : null}
+
+      {screen === "lobby" ? <LobbyScreen lobby={lobby} /> : null}
+      {screen === "edit" ? <EditorScreen editor={editor} /> : null}
+      {screen === "edit" ? <Inspector scene={scene} /> : null}
 
       {screen === "game" ? <Hud hud={hud} /> : null}
       {screen === "paused" ? <Pause /> : null}
@@ -86,28 +87,33 @@ export function App() {
 
 function ToastView({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
   const error = toast.kind === "error";
+
   return (
     <node
-      onClick={onDismiss}
       style={{
         positionType: "absolute",
-        bottom: 20,
-        alignSelf: "center",
-        maxWidth: "60%",
-        padding: { horizontal: 14, vertical: 10 },
-        borderRadius: 10,
-        border: 1,
-        borderColor: error ? theme.danger : theme.accentDim,
-        backgroundColor: error ? "#3a2233" : theme.surface,
-        cursor: "pointer",
-        transition,
+        left: 0,
+        bottom: 24,
+        width: "100%",
+        justifyContent: "center",
       }}
     >
-      <node style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-        <text style={{ color: error ? theme.danger : theme.accent, fontSize: 13 }}>
-          {error ? "Ошибка" : "Инфо"}
+      <node
+        onClick={onDismiss}
+        style={{
+          maxWidth: 480,
+          padding: { horizontal: 12, vertical: 8 },
+          borderRadius: 8,
+          border: 1,
+          borderColor: error ? theme.danger : theme.border,
+          backgroundColor: theme.surface,
+          cursor: "pointer",
+          transition,
+        }}
+      >
+        <text style={{ color: error ? theme.danger : theme.text, fontSize: 12 }}>
+          {toast.message}
         </text>
-        <text style={{ color: theme.text, fontSize: 13 }}>{toast.message}</text>
       </node>
     </node>
   );
@@ -117,6 +123,6 @@ const rootStyle = (screen: Screen): BevyStyle => ({
   width: "100%",
   height: "100%",
   flexDirection: "column",
-  // В игре фон прозрачный: сквозь HUD и Esc-меню должна быть видна сцена.
-  backgroundColor: screen === "game" ? "transparent" : theme.bg,
+  backgroundColor:
+    screen === "game" || screen === "paused" || screen === "edit" ? "transparent" : theme.bg,
 });

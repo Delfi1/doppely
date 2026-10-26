@@ -4,13 +4,24 @@ use lightyear::prediction::Predicted;
 use lightyear::prelude::Controlled;
 use lightyear_frame_interpolation::{FrameInterpolate, FrameInterpolationPlugin};
 
+use super::editor::EditorCamera;
+use super::game::CameraLook;
+use super::states::ClientState;
+
 pub struct RenderingPlugin;
 
 impl Plugin for RenderingPlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(handle_objects);
         app.add_observer(add_interpolation);
-        app.add_observer(camera_observer);
+        app.add_systems(Update, (resize_objects, spawnpoint_gizmo));
+        app.add_systems(Startup, spawn_camera);
+        app.add_systems(
+            PostUpdate,
+            sync_camera
+                .after(PhysicsSystems::Writeback)
+                .before(TransformSystems::Propagate),
+        );
 
         if !app.is_plugin_added::<FrameInterpolationPlugin>() {
             app.add_plugins(FrameInterpolationPlugin);
@@ -38,7 +49,28 @@ pub fn handle_objects(
         return;
     };
 
-    let mesh = meshes.add(object.mesh(size.0));
+    if *object == ObjectType::Spawnpoint {
+        let mesh = meshes.add(Sphere::new(0.2));
+        let material = materials.add(StandardMaterial {
+            base_color: object.base_color().with_alpha(0.45).into(),
+            emissive: LinearRgba::from(object.accent()),
+            unlit: true,
+            alpha_mode: AlphaMode::Blend,
+            ..default()
+        });
+        commands.entity(entity).insert((
+            Mesh3d(mesh),
+            MeshMaterial3d(material),
+            SpawnpointGizmo,
+            Visibility::Hidden,
+        ));
+        return;
+    }
+
+    let Some(mesh) = object.mesh(size.0) else {
+        return;
+    };
+    let mesh = meshes.add(mesh);
     let mut material = object.material();
 
     if let Some(glowing) = glowing {
@@ -62,6 +94,42 @@ pub fn handle_objects(
     }
 }
 
+#[derive(Component)]
+pub struct SpawnpointGizmo;
+
+fn spawnpoint_gizmo(
+    state: Res<State<ClientState>>,
+    mut gizmos: Query<&mut Visibility, With<SpawnpointGizmo>>,
+) {
+    let visible = *state.get() == ClientState::Edit;
+    for mut visibility in &mut gizmos {
+        let desired = if visible {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+        if *visibility != desired {
+            *visibility = desired;
+        }
+    }
+}
+
+fn resize_objects(
+    objects: Query<(Entity, &ObjectType, Ref<ObjectSize>), Changed<ObjectSize>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut commands: Commands,
+) {
+    for (entity, object, size) in &objects {
+        if size.is_added() {
+            continue;
+        }
+        let Some(mesh) = object.mesh(size.0) else {
+            continue;
+        };
+        commands.entity(entity).insert(Mesh3d(meshes.add(mesh)));
+    }
+}
+
 fn add_interpolation(
     trigger: On<Add<Position>>,
     query: Query<&RigidBody, With<Predicted>>,
@@ -82,28 +150,49 @@ fn add_interpolation(
     commands.entity(trigger.entity).insert(FrameInterpolate);
 }
 
-// Current camera marker
-#[derive(Component, Clone, Copy)]
-pub struct CurrentCamera;
+#[derive(Component)]
+pub struct MainCamera;
 
-pub fn ui_camera() -> impl Bundle {
-    (Camera2d::default(), CurrentCamera)
+pub fn main_camera() -> impl Bundle {
+    (
+        Name::new("Main camera"),
+        Camera3d::default(),
+        Bloom::default(),
+        IsDefaultUiCamera,
+        MainCamera,
+        menu_camera_transform(),
+    )
 }
 
-pub fn controller_camera() -> impl Bundle {
-    (Camera3d::default(), Bloom::default(), CurrentCamera)
+fn spawn_camera(mut commands: Commands) {
+    commands.spawn(main_camera());
 }
 
-fn camera_observer(
-    trigger: On<Add<CurrentCamera>>,
-    mut commands: Commands,
-    other: Query<Entity, With<CurrentCamera>>,
+fn menu_camera_transform() -> Transform {
+    Transform::from_xyz(0.0, 2.0, 8.0).looking_at(Vec3::new(0.0, 2.0, 0.0), Vec3::Y)
+}
+
+fn sync_camera(
+    state: Res<State<ClientState>>,
+    look: Res<CameraLook>,
+    editor: Res<EditorCamera>,
+    player: Query<&Transform, (With<Controlled>, Without<MainCamera>)>,
+    mut camera: Query<&mut Transform, With<MainCamera>>,
 ) {
-    for e in other {
-        if e == trigger.entity {
-            continue;
-        }
+    let Ok(mut camera) = camera.single_mut() else {
+        return;
+    };
 
-        commands.entity(e).try_despawn();
+    match state.get() {
+        ClientState::InGame | ClientState::Paused => {
+            let Ok(player) = player.single() else {
+                return;
+            };
+
+            camera.translation = player.translation;
+            camera.rotation = player.rotation * Quat::from_rotation_x(look.pitch);
+        }
+        ClientState::Edit => *camera = editor.transform(),
+        _ => *camera = menu_camera_transform(),
     }
 }

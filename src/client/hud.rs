@@ -1,9 +1,3 @@
-//! HUD: снимок игрового состояния и связи, который периодически уходит в React.
-//!
-//! React перерисовывает HUD сам, но FPS и позиция игрока живут в Bevy. Публикация
-//! раз в несколько кадров (~15 Гц) — компромисс: цифры успевают меняться, а
-//! встроенный V8 не просыпается на каждый кадр.
-
 use bevy::{
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     prelude::*,
@@ -16,7 +10,6 @@ use super::{
     ui::HudUpdated,
 };
 
-/// Как часто публикуется снимок HUD (в кадрах).
 const PUBLISH_EVERY: u32 = 4;
 
 pub struct HudPlugin;

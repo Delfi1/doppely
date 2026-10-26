@@ -1,43 +1,44 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { BevyStyle } from "bevy-react";
+import type { BevyStyle } from "bevy-react";
 import { bevy } from "./bevy";
-import { font, label, row, theme, transition } from "./theme";
+import { theme, transition } from "./theme";
 
 interface ButtonProps {
   children: ReactNode;
   onClick?: () => void;
   variant?: "primary" | "ghost" | "danger";
   disabled?: boolean;
+  fontSize?: number;
   style?: BevyStyle;
 }
 
 const variants = {
   primary: {
     base: { backgroundColor: theme.accent, borderColor: theme.accent },
-    hover: { backgroundColor: "#a3c8ff" },
-    press: { backgroundColor: "#6d94d6" },
+    hover: { backgroundColor: "#93b4f9" },
+    press: { backgroundColor: "#6a90dd" },
     text: theme.bg,
   },
   ghost: {
-    base: { backgroundColor: theme.surfaceHi, borderColor: theme.border },
-    hover: { backgroundColor: "#3b3f5c", borderColor: theme.accentDim },
-    press: { backgroundColor: "#2a2d45" },
+    base: { backgroundColor: "transparent", borderColor: theme.border },
+    hover: { backgroundColor: theme.surfaceHi, borderColor: theme.accentDim },
+    press: { backgroundColor: theme.surface },
     text: theme.text,
   },
   danger: {
-    base: { backgroundColor: "transparent", borderColor: theme.danger },
-    hover: { backgroundColor: "#3a2233" },
-    press: { backgroundColor: "#4d2535" },
+    base: { backgroundColor: "transparent", borderColor: theme.border },
+    hover: { backgroundColor: "#2a1a20", borderColor: theme.danger },
+    press: { backgroundColor: "#3a2029" },
     text: theme.danger,
   },
 };
 
-/** Кнопка с hover/press-состояниями и плавным переходом. */
 export function Button({
   children,
   onClick,
   variant = "ghost",
   disabled = false,
+  fontSize = 13,
   style,
 }: ButtonProps) {
   const v = variants[variant];
@@ -47,13 +48,14 @@ export function Button({
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
       style={{
-        ...row,
+        flexDirection: "row",
+        alignItems: "center",
         justifyContent: "center",
-        padding: { horizontal: 16, vertical: 9 },
+        padding: { horizontal: 14, vertical: 8 },
         border: 1,
-        borderRadius: 9,
+        borderRadius: 8,
         cursor: disabled ? "default" : "pointer",
-        opacity: disabled ? 0.45 : 1,
+        opacity: disabled ? 0.4 : 1,
         transition,
         ...v.base,
         ...style,
@@ -62,9 +64,7 @@ export function Button({
       pressStyle={disabled ? undefined : v.press}
       focusVisibleStyle={{ outline: { width: 2, color: theme.accent } }}
     >
-      <text style={{ color: v.text, fontSize: 14, fontWeight: "semibold" }}>
-        {children}
-      </text>
+      <text style={{ color: v.text, fontSize, fontWeight: "semibold" }}>{children}</text>
     </button>
   );
 }
@@ -72,60 +72,147 @@ export function Button({
 interface TextFieldProps {
   value: string;
   onChange: (value: string) => void;
-  /** Показать вместо значения, пока оно пустое. */
-  placeholder?: string;
   label?: string;
-  onSubmit?: () => void;
-  style?: BevyStyle;
+  autoFocus?: boolean;
   maxLength?: number;
+  style?: BevyStyle;
 }
 
-/** Поле ввода с подписью-подсказкой; Enter вызывает `onSubmit`. */
 export function TextField({
   value,
   onChange,
-  placeholder,
   label: caption,
-  onSubmit,
-  style,
+  autoFocus = false,
   maxLength,
+  style,
 }: TextFieldProps) {
   return (
-    <node style={{ flexDirection: "column", gap: 6, ...style }}>
-      {caption ? <text style={label}>{caption}</text> : null}
+    <node style={{ flexDirection: "column", gap: 5, ...style }}>
+      {caption ? <text style={{ color: theme.muted, fontSize: 11 }}>{caption}</text> : null}
+      <editableText
+        value={value}
+        onChange={onChange}
+        maxLength={maxLength}
+        autofocus={autoFocus}
+        ariaLabel={caption}
+        style={{
+          minHeight: 18,
+          width: "100%",
+          padding: { horizontal: 10, vertical: 4 },
+          borderRadius: 8,
+          border: 1,
+          borderColor: theme.border,
+          backgroundColor: theme.bg,
+          color: theme.text,
+          fontSize: 14,
+          outline: undefined,
+          transition,
+        }}
+        hoverStyle={{ borderColor: theme.accentDim }}
+        focusVisibleStyle={{ borderColor: theme.accent }}
+      />
+    </node>
+  );
+}
+
+interface DragNumberProps {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  step?: number;
+  digits?: number;
+  style?: BevyStyle;
+}
+
+export function DragNumber({
+  label,
+  value,
+  onChange,
+  step = 0.05,
+  digits = 2,
+  style,
+}: DragNumberProps) {
+  const [text, setText] = useState(value.toFixed(digits));
+  const [drag, setDrag] = useState<{ x: number; value: number } | null>(null);
+
+  useEffect(() => {
+    if (drag) return;
+    const parsed = Number(text.replace(",", "."));
+    if (!Number.isFinite(parsed) || Math.abs(parsed - value) > 0.0001) {
+      setText(value.toFixed(digits));
+    }
+    // Синхронизация только по внешнему значению, ввод пользователя не трогаем.
+  }, [value]);
+
+  const apply = (next: number) => {
+    const rounded = Math.round(next * 10000) / 10000;
+    setText(rounded.toFixed(digits));
+    onChange(rounded);
+  };
+
+  return (
+    <node
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 2,
+        flexGrow: 1,
+        flexShrink: 1,
+        flexBasis: 0,
+        minWidth: 0,
+        ...style,
+      }}
+    >
+      <node
+        onPointerDown={(event) => setDrag({ x: event.clientX, value })}
+        onPointerMove={(event) => {
+          if (!drag) return;
+          apply(drag.value + (event.clientX - drag.x) * step);
+        }}
+        onPointerUp={() => setDrag(null)}
+        style={{
+          width: 14,
+          justifyContent: "center",
+          alignItems: "center",
+          borderRadius: 4,
+          cursor: "ew-resize",
+          backgroundColor: drag ? theme.surfaceHi : "transparent",
+          transition,
+        }}
+        hoverStyle={{ backgroundColor: theme.surfaceHi }}
+      >
+        <text style={{ color: drag ? theme.accent : theme.muted, fontSize: 10 }}>{label}</text>
+      </node>
       <node
         style={{
           flexDirection: "row",
           alignItems: "center",
-          borderRadius: 9,
+          flexGrow: 1,
+          flexShrink: 1,
+          flexBasis: 0,
+          minWidth: 26,
+          minHeight: 20,
+          borderRadius: 5,
           border: 1,
           borderColor: theme.border,
           backgroundColor: theme.bg,
-          padding: { horizontal: 12, vertical: 6 },
-          transition,
+          padding: { horizontal: 5, vertical: 1 },
         }}
       >
-        {value.length === 0 && placeholder ? (
-          <text
-            style={{
-              positionType: "absolute",
-              left: 12,
-              color: theme.faint,
-              fontSize: 14,
-            }}
-          >
-            {placeholder}
-          </text>
-        ) : null}
         <editableText
-          value={value}
-          onChange={onChange}
-          maxLength={maxLength}
-          ariaLabel={caption ?? placeholder}
+          value={text}
+          onChange={(next) => {
+            setText(next);
+            const parsed = Number(next.replace(",", "."));
+            if (Number.isFinite(parsed)) onChange(parsed);
+          }}
+          maxLength={12}
+          ariaLabel={label}
           style={{
             flexGrow: 1,
+            flexBasis: 0,
             color: theme.text,
-            fontSize: 14,
+            fontSize: 12,
             outline: undefined,
           }}
         />
@@ -134,66 +221,26 @@ export function TextField({
   );
 }
 
-/**
- * Ловит Enter, не зная, какое поле в фокусе: игрок либо что-то печатает, либо
- * нет. Решение принимает вызывающая сторона.
- */
+export function Title({ children }: { children: ReactNode }) {
+  return (
+    <text style={{ color: theme.text, fontSize: 22, fontWeight: "bold", letterSpacing: 1 }}>
+      {children}
+    </text>
+  );
+}
+
+export function useEscape(onEscape: () => void) {
+  useEffect(() => {
+    return bevy.on("keyDown", (e) => {
+      if (e.key === "Escape") onEscape();
+    });
+  }, [onEscape]);
+}
+
 export function useEnter(onEnter: () => void) {
   useEffect(() => {
-    const stop = bevy.on("keyDown", (e) => {
+    return bevy.on("keyDown", (e) => {
       if (e.key === "Enter") onEnter();
     });
-    return stop;
-    // Подписка переезжает при смене обработчика, чтобы всегда видеть актуальный.
   }, [onEnter]);
-}
-
-/** Заголовок экрана. */
-export function Title({ children, subtitle }: { children: ReactNode; subtitle?: string }) {
-  return (
-    <node style={{ flexDirection: "column", gap: 4 }}>
-      <text
-        style={{
-          color: theme.text,
-          fontSize: 30,
-          fontWeight: "black",
-          letterSpacing: 1,
-        }}
-      >
-        {children}
-      </text>
-      {subtitle ? (
-        <text style={{ color: theme.muted, fontSize: 13 }}>{subtitle}</text>
-      ) : null}
-    </node>
-  );
-}
-
-/** Компактная метка-статус. */
-export function Badge({
-  children,
-  color = theme.accent,
-}: {
-  children: ReactNode;
-  color?: string;
-}) {
-  return (
-    <node
-      style={{
-        padding: { horizontal: 8, vertical: 3 },
-        borderRadius: 999,
-        backgroundColor: theme.bg,
-        border: 1,
-        borderColor: color,
-      }}
-    >
-      <text style={{ color, fontSize: 11, fontFamily: font.mono }}>{children}</text>
-    </node>
-  );
-}
-
-/** Двусторонний инпут: локальное значение + изменение в родителе. */
-export function useField(initial = "") {
-  const [value, setValue] = useState(initial);
-  return { value, setValue };
 }
